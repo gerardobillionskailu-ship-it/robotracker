@@ -6,6 +6,64 @@ Implementa estrategias de análisis técnico para identificar oportunidades de t
 import pandas as pd
 import numpy as np
 from typing import Dict, Tuple
+import yfinance as yf
+
+
+# ========== FUNCIONES DE DESCARGA ROBUSTA ==========
+
+def fetch_stock_data(symbol: str, period: str = "2y") -> pd.DataFrame:
+    """
+    Descarga datos de acciones de forma robusta usando yfinance.
+
+    Implementa User-Agent y manejo de errores para evitar JSON parsing errors.
+
+    Args:
+        symbol: Símbolo del ticker (ej: 'CVX', 'SLB')
+        period: Período de datos ('1y', '2y', '6mo', etc.)
+
+    Returns:
+        DataFrame con datos OHLCV o DataFrame vacío si hay error
+    """
+    try:
+        # Crear objeto Ticker con User-Agent de navegador real
+        ticker = yf.Ticker(symbol)
+
+        # Configurar headers para evitar bloqueos (User-Agent de Chrome)
+        # yfinance usa requests internamente, así que configuramos la sesión
+        import requests
+        session = requests.Session()
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        })
+        ticker.session = session
+
+        # Descargar datos históricos usando el objeto Ticker
+        df = ticker.history(period=period)
+
+        # Validar que el DataFrame no esté vacío
+        if df.empty:
+            # Intentar con período más corto
+            if period == "2y":
+                return fetch_stock_data(symbol, "1y")
+            elif period == "1y":
+                return fetch_stock_data(symbol, "6mo")
+            elif period == "6mo":
+                return fetch_stock_data(symbol, "3mo")
+            else:
+                return pd.DataFrame()
+
+        return df
+
+    except Exception as e:
+        # En caso de error, retornar DataFrame vacío
+        # El error será manejado en la capa de UI
+        return pd.DataFrame()
 
 
 class TechnicalIndicators:
