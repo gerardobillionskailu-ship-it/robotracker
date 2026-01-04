@@ -87,23 +87,42 @@ def render_sidebar():
             help="Ingresa un ticker personalizado para analizar. Deja vacío para usar watchlist."
         )
 
-        # Alpha Vantage API Key
+        # Alpha Vantage API Key - Usando Streamlit Secrets (Seguro)
         st.subheader("🔑 API de Datos Reales")
-        api_key = st.text_input(
-            "Alpha Vantage API Key",
-            value="1YU410D6L663XMZB",  # API Key preconfigurada
-            type="password",
-            help="""
-            ✅ API Key preconfigurada para datos reales de Alpha Vantage.
 
-            Puedes cambiarla si tienes tu propia clave.
-            """
+        # Intentar cargar API Key desde secrets
+        try:
+            api_key = st.secrets.get("ALPHAVANTAGE_API_KEY", "")
+            if api_key:
+                st.success("✅ API Key cargada desde Secrets - Datos reales activos")
+            else:
+                st.error("❌ API Key no configurada en Secrets")
+                st.info("""
+                **Para configurar tu API Key:**
+
+                1. Ve a tu dashboard de Streamlit Cloud
+                2. Abre "Settings" → "Secrets"
+                3. Añade: `ALPHAVANTAGE_API_KEY = "tu_clave_aquí"`
+                4. Obtén tu clave gratis en: https://www.alphavantage.co/support/#api-key
+
+                Mientras tanto, usa el Modo Simulación.
+                """)
+        except Exception as e:
+            # Si no hay secrets configurados (desarrollo local)
+            st.warning("⚠️ Secrets no disponibles - Usando Modo Simulación")
+            api_key = ""
+
+        # Opción manual para desarrollo/override
+        manual_key = st.text_input(
+            "API Key Manual (opcional)",
+            type="password",
+            placeholder="Solo para desarrollo local",
+            help="Sobrescribe la API Key de Secrets si es necesario"
         )
 
-        if api_key:
-            st.success("✅ API Key configurada - Usando datos reales de Alpha Vantage")
-        else:
-            st.info("💡 Sin API Key - Obtén una gratis en alphavantage.co")
+        if manual_key:
+            api_key = manual_key
+            st.info("🔧 Usando API Key manual")
 
         # Modo Simulación (automático si no hay API key)
         simulation_mode = st.toggle(

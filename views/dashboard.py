@@ -210,6 +210,61 @@ def render_larry_williams_card(symbol: str, signal_data: dict, df: pd.DataFrame)
     for reason in signal_data['reasons']:
         st.write(f"• {reason}")
 
+    # CALCULADORA DE GESTIÓN DE RIESGO (Regla 2-10%)
+    if signal == 'BUY':
+        current_price = df['Close'].iloc[-1]
+        st.subheader("💰 Gestión de Riesgo (Capital: $1,000)")
+
+        # Estimación de prima (aproximadamente 3-5% del precio de la acción para ATM)
+        strike_price = current_price * 1.05  # Strike conservador +5%
+        prima_estimada = current_price * 0.04  # 4% del precio de la acción
+        costo_contrato = prima_estimada * 100  # 1 contrato = 100 acciones
+
+        # Validación de riesgo
+        MAX_PRIMA = 150  # 15% del capital de $1,000
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                "Costo Estimado (1 contrato)",
+                f"${costo_contrato:.2f}",
+                help=f"Prima estimada ~{prima_estimada:.2f}/acción × 100"
+            )
+
+        with col2:
+            stop_loss = costo_contrato * 0.75  # Vender si pierde 25%
+            st.metric(
+                "Stop Loss (25%)",
+                f"${stop_loss:.2f}",
+                delta=f"-${costo_contrato - stop_loss:.2f}",
+                delta_color="inverse",
+                help="Salir si la opción pierde 25% de su valor"
+            )
+
+        with col3:
+            take_profit = costo_contrato * 1.50  # Vender si gana 50%
+            st.metric(
+                "Take Profit (50%)",
+                f"${take_profit:.2f}",
+                delta=f"+${take_profit - costo_contrato:.2f}",
+                help="Salir si la opción gana 50% de valor"
+            )
+
+        # Advertencia de riesgo
+        if costo_contrato > MAX_PRIMA:
+            st.error(f"""
+            ⚠️ **RIESGO ALTO**: El costo estimado (${costo_contrato:.2f}) supera el límite recomendado de ${MAX_PRIMA} (15% del capital).
+
+            **Recomendación**: Considera esperar una mejor oportunidad o usar un strike más alejado (OTM) con prima menor.
+            """)
+        else:
+            st.success(f"""
+            ✅ **RIESGO CONTROLADO**: El costo estimado (${costo_contrato:.2f}) está dentro del límite de ${MAX_PRIMA} (15% del capital).
+
+            **Capital restante**: ${1000 - costo_contrato:.2f} disponible para diversificación.
+            """)
+
     # Métricas clave
     st.subheader("📊 Métricas Larry Williams")
     col1, col2, col3 = st.columns(3)
@@ -268,6 +323,61 @@ def render_wyckoff_card(symbol: str, signal_data: dict, df: pd.DataFrame):
     st.subheader("📋 Análisis Wyckoff")
     for reason in signal_data['reasons']:
         st.write(f"• {reason}")
+
+    # CALCULADORA DE GESTIÓN DE RIESGO (Regla 2-10%)
+    if signal == 'BUY':
+        current_price = df['Close'].iloc[-1]
+        st.subheader("💰 Gestión de Riesgo (Capital: $1,000)")
+
+        # Estimación de prima (aproximadamente 3-5% del precio de la acción para ATM)
+        strike_price = current_price * 1.05  # Strike conservador +5%
+        prima_estimada = current_price * 0.04  # 4% del precio de la acción
+        costo_contrato = prima_estimada * 100  # 1 contrato = 100 acciones
+
+        # Validación de riesgo
+        MAX_PRIMA = 150  # 15% del capital de $1,000
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                "Costo Estimado (1 contrato)",
+                f"${costo_contrato:.2f}",
+                help=f"Prima estimada ~{prima_estimada:.2f}/acción × 100"
+            )
+
+        with col2:
+            stop_loss = costo_contrato * 0.75  # Vender si pierde 25%
+            st.metric(
+                "Stop Loss (25%)",
+                f"${stop_loss:.2f}",
+                delta=f"-${costo_contrato - stop_loss:.2f}",
+                delta_color="inverse",
+                help="Salir si la opción pierde 25% de su valor"
+            )
+
+        with col3:
+            take_profit = costo_contrato * 1.50  # Vender si gana 50%
+            st.metric(
+                "Take Profit (50%)",
+                f"${take_profit:.2f}",
+                delta=f"+${take_profit - costo_contrato:.2f}",
+                help="Salir si la opción gana 50% de valor"
+            )
+
+        # Advertencia de riesgo
+        if costo_contrato > MAX_PRIMA:
+            st.error(f"""
+            ⚠️ **RIESGO ALTO**: El costo estimado (${costo_contrato:.2f}) supera el límite recomendado de ${MAX_PRIMA} (15% del capital).
+
+            **Recomendación**: Considera esperar una mejor oportunidad o usar un strike más alejado (OTM) con prima menor.
+            """)
+        else:
+            st.success(f"""
+            ✅ **RIESGO CONTROLADO**: El costo estimado (${costo_contrato:.2f}) está dentro del límite de ${MAX_PRIMA} (15% del capital).
+
+            **Capital restante**: ${1000 - costo_contrato:.2f} disponible para diversificación.
+            """)
 
     # Métricas clave
     st.subheader("📊 Métricas Wyckoff")
@@ -563,22 +673,37 @@ def render_quick_action(strategy_mode: str, custom_ticker: str = "", simulation_
             strike_agresivo = current_price * 1.10
             riesgo_max = strike_conservador * 100  # Asumiendo 1 contrato = 100 acciones
 
-            # Contenedor de acción rápida
+            # Colores dinámicos según confianza (Bloomberg-style)
+            if strength >= 70:
+                # Alta confianza - Verde Neón
+                signal_color = "#00FF88"
+                signal_text = "COMPRA FUERTE"
+                signal_emoji = "🚀"
+                gradient_colors = "#00FF88 0%, #00D975 100%"
+            else:
+                # Confianza moderada - Naranja
+                signal_color = "#FFB800"
+                signal_text = "COMPRA MODERADA"
+                signal_emoji = "📊"
+                gradient_colors = "#FFB800 0%, #FF9500 100%"
+
+            # Contenedor de acción rápida (Bloomberg-Style)
             with st.container():
-                st.markdown("""
-                <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                            padding: 30px;
+                st.markdown(f"""
+                <div style='background: linear-gradient(135deg, {gradient_colors});
+                            padding: 35px;
                             border-radius: 15px;
                             margin-bottom: 25px;
-                            box-shadow: 0 10px 30px rgba(0,0,0,0.3);'>
-                    <h1 style='text-align: center; color: white; font-size: 2.5em; margin-bottom: 10px;'>
-                        🚀 SEÑAL: COMPRA FUERTE (LONG CALL)
+                            box-shadow: 0 15px 40px rgba(0,0,0,0.4);
+                            border: 3px solid {signal_color};'>
+                    <h1 style='text-align: center; color: #0E1117; font-size: 2.8em; margin-bottom: 10px; text-shadow: 0 2px 4px rgba(0,0,0,0.2);'>
+                        {signal_emoji} SEÑAL: {signal_text} (LONG CALL)
                     </h1>
-                    <p style='text-align: center; color: #E0E0E0; font-size: 1.2em;'>
-                        {} | Estrategia: {}
+                    <p style='text-align: center; color: #1E1E1E; font-size: 1.3em; font-weight: bold;'>
+                        {selected_symbol} | {strategy_mode} | Confianza: {strength}%
                     </p>
                 </div>
-                """.format(selected_symbol, strategy_mode), unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
 
                 # Bloques de información clave
                 col1, col2, col3 = st.columns(3)

@@ -6,6 +6,7 @@ Implementa estrategias de análisis técnico para identificar oportunidades de t
 import pandas as pd
 import numpy as np
 from typing import Dict, Tuple
+import streamlit as st
 
 
 class TechnicalIndicators:
@@ -299,6 +300,7 @@ def get_support_resistance(df: pd.DataFrame, window: int = 20) -> Tuple[float, f
     return support, resistance
 
 
+@st.cache_data(ttl=3600)  # Cache por 1 hora
 def fetch_stock_data(symbol: str, period: str = "2y") -> pd.DataFrame:
     """
     Descarga datos de acciones usando yfinance con headers robustos.
@@ -352,6 +354,7 @@ def fetch_stock_data(symbol: str, period: str = "2y") -> pd.DataFrame:
     return pd.DataFrame()
 
 
+@st.cache_data(ttl=3600)  # Cache por 1 hora para no saturar Alpha Vantage (5 calls/min free tier)
 def fetch_stock_data_alphavantage(symbol: str, api_key: str) -> pd.DataFrame:
     """
     Descarga datos de acciones usando Alpha Vantage API.
