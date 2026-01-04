@@ -9,7 +9,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
-from utils.indicators import TechnicalIndicators, get_support_resistance
+from utils.indicators import TechnicalIndicators, get_support_resistance, fetch_stock_data
 
 
 # ========== CONFIGURACIÓN ==========
@@ -137,26 +137,10 @@ def render_strategy_card(strategy_mode: str):
     selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
 
     try:
-        # Obtener datos históricos con retry
-        ticker = yf.Ticker(selected_symbol)
+        # Obtener datos históricos usando función robusta con User-Agent
+        df = fetch_stock_data(selected_symbol, period="2y")
 
-        # Intentar obtener datos históricos
-        df = None
-        try:
-            df = ticker.history(period='1y')
-        except Exception as hist_error:
-            st.warning(f"⚠️ Error al descargar datos: {str(hist_error)}")
-            # Intentar con período más corto
-            try:
-                df = ticker.history(period='6mo')
-                st.info("📊 Usando 6 meses de datos históricos")
-            except:
-                try:
-                    df = ticker.history(period='3mo')
-                    st.info("📊 Usando 3 meses de datos históricos")
-                except:
-                    pass
-
+        # Validar que el DataFrame no esté vacío y tenga suficientes datos
         if df is None or df.empty or len(df) < 20:
             st.error(f"❌ No se pudieron obtener suficientes datos para {selected_symbol}")
             st.info("""
@@ -180,9 +164,24 @@ def render_strategy_card(strategy_mode: str):
             st.error(f"❌ Faltan columnas en los datos: {', '.join(missing_columns)}")
             return
 
+        # Validar que no haya valores nulos en columnas críticas
+        if df[required_columns].isnull().any().any():
+            st.warning("⚠️ Algunos datos contienen valores nulos. Rellenando...")
+            df = df.ffill().bfill()
+
+        # Verificar nuevamente que tengamos datos válidos
+        if df.empty or len(df) < 20:
+            st.error("❌ Datos insuficientes después de validación")
+            return
+
         # Calcular indicadores
         indicators = TechnicalIndicators(df)
         df_with_indicators = indicators.calculate_all_indicators()
+
+        # Validar que los indicadores se calcularon correctamente
+        if df_with_indicators.empty:
+            st.error("❌ Error al calcular indicadores técnicos")
+            return
 
         # Obtener señal según estrategia
         if strategy_mode == 'Larry Williams':
@@ -483,37 +482,43 @@ def render_news():
 
     selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
 
+    # Mensaje de alerta geopolítica
+    geopolitical_alert = """
+    ⚠️ **Alerta Geopolítica**: La captura de Nicolás Maduro genera alta volatilidad.
+    Se recomienda monitorear contratos de servicios petroleros (SLB/HAL).
+    """
+
     # Noticias fallback sobre Venezuela
     fallback_news = [
         {
-            'title': 'Cambio de Régimen en Venezuela: Perspectivas para el Mercado Energético',
-            'publisher': 'TradeOlympo Analysis',
+            'title': '🔴 URGENTE: Captura de Nicolás Maduro sacude mercados energéticos globales',
+            'publisher': 'TradeOlympo Alert',
             'link': '#',
-            'time_str': 'Hace 2 horas'
+            'time_str': 'Hace 1 hora'
         },
         {
-            'title': 'Impacto del Cambio Político Venezolano en Precios del Petróleo',
+            'title': 'SLB y HAL: Contratos petroleros venezolanos bajo revisión ante cambio político',
             'publisher': 'Energy Markets Today',
+            'link': '#',
+            'time_str': 'Hace 3 horas'
+        },
+        {
+            'title': 'Volatilidad extrema en sector energético tras eventos en Venezuela',
+            'publisher': 'Bloomberg Energy',
             'link': '#',
             'time_str': 'Hace 5 horas'
         },
         {
-            'title': 'Sector Energético: Oportunidades tras Transición en Venezuela',
-            'publisher': 'Financial Times',
+            'title': 'CVX evalúa reapertura de operaciones en Venezuela post-Maduro',
+            'publisher': 'Reuters',
             'link': '#',
             'time_str': 'Hace 8 horas'
         },
         {
-            'title': 'CVX, SLB y HAL: Análisis ante Nuevas Políticas Venezolanas',
-            'publisher': 'Bloomberg Energy',
+            'title': 'Analistas proyectan impacto en precios del crudo ante transición venezolana',
+            'publisher': 'Financial Times',
             'link': '#',
             'time_str': 'Hace 12 horas'
-        },
-        {
-            'title': 'Inversiones en el Sector Petrolero: Lo que Viene en 2025',
-            'publisher': 'Reuters',
-            'link': '#',
-            'time_str': 'Hace 1 día'
         }
     ]
 
@@ -522,8 +527,9 @@ def render_news():
         news = ticker.news
 
         if not news or len(news) == 0:
-            # Usar noticias fallback
-            st.info(f"📡 Noticias en vivo no disponibles para {selected_symbol}. Mostrando análisis destacado:")
+            # Usar noticias fallback con alerta geopolítica
+            st.warning(geopolitical_alert)
+            st.info(f"📡 Noticias en vivo no disponibles. Mostrando alertas de mercado:")
             news = fallback_news
             use_fallback = True
         else:
@@ -563,8 +569,9 @@ def render_news():
                 st.divider()
 
     except Exception as e:
-        # Si hay cualquier error, mostrar noticias fallback
-        st.warning("⚠️ No se pudieron cargar noticias en vivo. Mostrando análisis destacado:")
+        # Si hay cualquier error, mostrar alerta geopolítica y noticias fallback
+        st.warning(geopolitical_alert)
+        st.info("📡 Servicio de noticias temporalmente no disponible. Mostrando alertas de mercado:")
 
         for article in fallback_news:
             with st.container():
