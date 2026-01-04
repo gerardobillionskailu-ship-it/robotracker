@@ -91,12 +91,12 @@ def render_sidebar():
         st.subheader("🔑 API de Datos Reales")
         api_key = st.text_input(
             "Alpha Vantage API Key",
+            value="1YU410D6L663XMZB",  # API Key preconfigurada
             type="password",
-            placeholder="Pega tu API Key aquí",
             help="""
-            Obtén tu API Key GRATIS en: https://www.alphavantage.co/support/#api-key
+            ✅ API Key preconfigurada para datos reales de Alpha Vantage.
 
-            Necesaria para datos reales. Sin ella, se usará Modo Simulación.
+            Puedes cambiarla si tienes tu propia clave.
             """
         )
 

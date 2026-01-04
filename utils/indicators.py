@@ -68,12 +68,14 @@ class TechnicalIndicators:
         self.df['williams_oversold'] = self.df['williams_r'] < -80
         self.df['williams_overbought'] = self.df['williams_r'] > -20
 
-        # Medias Móviles
-        self.df['sma_20'] = self.df['Close'].rolling(window=20).mean()
-        self.df['sma_50'] = self.df['Close'].rolling(window=50).mean()
-        self.df['sma_200'] = self.df['Close'].rolling(window=200).mean()
+        # Medias Móviles (Larry Williams setup clásico)
+        self.df['sma_20'] = self.df['Close'].rolling(window=20).mean()      # ~1 mes
+        self.df['sma_50'] = self.df['Close'].rolling(window=50).mean()      # ~10 semanas / 2.5 meses
+        self.df['sma_65'] = self.df['Close'].rolling(window=65).mean()      # 13 semanas (trimestral)
+        self.df['sma_200'] = self.df['Close'].rolling(window=200).mean()    # ~40 semanas / 10 meses
+        self.df['sma_250'] = self.df['Close'].rolling(window=250).mean()    # 50 semanas (~1 año)
 
-        # Cruces de Medias (Golden Cross / Death Cross)
+        # Cruces de Medias (Golden Cross / Death Cross) - usando 50 y 200
         self.df['golden_cross'] = (
             (self.df['sma_50'] > self.df['sma_200']) &
             (self.df['sma_50'].shift(1) <= self.df['sma_200'].shift(1))

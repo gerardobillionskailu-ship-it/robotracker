@@ -334,17 +334,17 @@ def render_chart(symbol: str, df: pd.DataFrame, strategy_mode: str):
             row=1, col=1
         )
 
-        # Medias móviles
+        # Medias móviles (Larry Williams: 13 y 50 semanas = 65 y 250 días)
         fig.add_trace(
-            go.Scatter(x=df.index, y=df['sma_20'], name='SMA 20', line=dict(color='blue', width=1)),
+            go.Scatter(x=df.index, y=df['sma_20'], name='SMA 20 (corto)', line=dict(color='#00D9FF', width=2)),
             row=1, col=1
         )
         fig.add_trace(
-            go.Scatter(x=df.index, y=df['sma_50'], name='SMA 50', line=dict(color='orange', width=1)),
+            go.Scatter(x=df.index, y=df['sma_50'], name='SMA 50 (13sem)', line=dict(color='#FFB800', width=2)),
             row=1, col=1
         )
         fig.add_trace(
-            go.Scatter(x=df.index, y=df['sma_200'], name='SMA 200', line=dict(color='red', width=1)),
+            go.Scatter(x=df.index, y=df['sma_200'], name='SMA 200 (50sem)', line=dict(color='#FF006E', width=2)),
             row=1, col=1
         )
 
@@ -427,12 +427,42 @@ def render_chart(symbol: str, df: pd.DataFrame, strategy_mode: str):
             row=2, col=1
         )
 
-    # Layout
+    # Layout con tema oscuro profesional (Terminal Style)
     fig.update_layout(
+        template='plotly_dark',  # Tema oscuro
         height=700,
         showlegend=True,
         xaxis_rangeslider_visible=False,
-        hovermode='x unified'
+        hovermode='x unified',
+        paper_bgcolor='#0E1117',  # Fondo oscuro de Streamlit
+        plot_bgcolor='#1A1D24',   # Fondo del gráfico (terminal)
+        font=dict(color='#E0E0E0', size=12, family='Courier New, monospace'),  # Fuente terminal
+        title=dict(
+            text=f"<b>{symbol}</b> - {strategy_mode}",
+            font=dict(size=20, color='#00FF88'),  # Verde neón
+            x=0.5,
+            xanchor='center'
+        ),
+        margin=dict(l=50, r=50, t=80, b=50),
+        xaxis=dict(
+            gridcolor='#2E3440',
+            showgrid=True,
+            linecolor='#4C566A'
+        ),
+        yaxis=dict(
+            gridcolor='#2E3440',
+            showgrid=True,
+            linecolor='#4C566A'
+        )
+    )
+
+    # Colores de velas (verde/rojo neón)
+    fig.update_traces(
+        increasing_line_color='#00FF88',  # Verde neón
+        decreasing_line_color='#FF073A',  # Rojo vibrante
+        increasing_fillcolor='#00FF88',
+        decreasing_fillcolor='#FF073A',
+        selector=dict(type='candlestick')
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -486,6 +516,134 @@ def render_news():
         st.error(f"Error cargando noticias: {str(e)}")
 
 
+# ========== SECCIÓN DE ACCIÓN RÁPIDA ==========
+
+def render_quick_action(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False, api_key: str = ""):
+    """
+    Renderiza una sección de acción rápida mobile-first en la parte superior.
+    Muestra la señal principal de trading de forma prominente.
+    """
+    # Determinar el símbolo a analizar
+    if custom_ticker and custom_ticker.strip():
+        selected_symbol = custom_ticker.strip().upper()
+    else:
+        selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
+
+    try:
+        # Obtener datos
+        if simulation_mode:
+            df = generate_synthetic_data(selected_symbol, days=500)
+        elif api_key:
+            df = fetch_stock_data_alphavantage(selected_symbol, api_key)
+        else:
+            df = fetch_stock_data(selected_symbol, period="2y")
+
+        # Validación básica
+        if df is None or df.empty or len(df) < 20:
+            return  # No mostrar acción rápida si no hay datos
+
+        # Calcular indicadores
+        indicators = TechnicalIndicators(df)
+        df_with_indicators = indicators.calculate_all_indicators()
+
+        # Obtener señal según estrategia
+        if strategy_mode == 'Larry Williams':
+            signal_data = indicators.get_larry_williams_signal()
+        else:  # Wyckoff
+            signal_data = indicators.get_wyckoff_signal()
+
+        signal = signal_data['signal']
+        strength = signal_data['strength']
+        current_price = df['Close'].iloc[-1]
+
+        # Solo mostrar si es señal de COMPRA fuerte
+        if signal == 'BUY' and strength >= 60:
+            # Calcular strikes
+            strike_conservador = current_price * 1.05
+            strike_agresivo = current_price * 1.10
+            riesgo_max = strike_conservador * 100  # Asumiendo 1 contrato = 100 acciones
+
+            # Contenedor de acción rápida
+            with st.container():
+                st.markdown("""
+                <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            padding: 30px;
+                            border-radius: 15px;
+                            margin-bottom: 25px;
+                            box-shadow: 0 10px 30px rgba(0,0,0,0.3);'>
+                    <h1 style='text-align: center; color: white; font-size: 2.5em; margin-bottom: 10px;'>
+                        🚀 SEÑAL: COMPRA FUERTE (LONG CALL)
+                    </h1>
+                    <p style='text-align: center; color: #E0E0E0; font-size: 1.2em;'>
+                        {} | Estrategia: {}
+                    </p>
+                </div>
+                """.format(selected_symbol, strategy_mode), unsafe_allow_html=True)
+
+                # Bloques de información clave
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    st.markdown("""
+                    <div style='background-color: #1E1E1E;
+                                padding: 20px;
+                                border-radius: 10px;
+                                text-align: center;
+                                border: 2px solid #00FF88;'>
+                        <h3 style='color: #00FF88; margin: 0;'>Strike Sugerido</h3>
+                        <h2 style='color: white; margin: 10px 0;'>${:.2f}</h2>
+                        <p style='color: #AAAAAA; margin: 0; font-size: 0.9em;'>Conservador +5%</p>
+                    </div>
+                    """.format(strike_conservador), unsafe_allow_html=True)
+
+                with col2:
+                    st.markdown("""
+                    <div style='background-color: #1E1E1E;
+                                padding: 20px;
+                                border-radius: 10px;
+                                text-align: center;
+                                border: 2px solid #FFD700;'>
+                        <h3 style='color: #FFD700; margin: 0;'>Confianza</h3>
+                        <h2 style='color: white; margin: 10px 0;'>{}%</h2>
+                        <p style='color: #AAAAAA; margin: 0; font-size: 0.9em;'>Alta probabilidad</p>
+                    </div>
+                    """.format(strength), unsafe_allow_html=True)
+
+                with col3:
+                    st.markdown("""
+                    <div style='background-color: #1E1E1E;
+                                padding: 20px;
+                                border-radius: 10px;
+                                text-align: center;
+                                border: 2px solid #FF6B6B;'>
+                        <h3 style='color: #FF6B6B; margin: 0;'>Riesgo Máx.</h3>
+                        <h2 style='color: white; margin: 10px 0;'>${:.0f}</h2>
+                        <p style='color: #AAAAAA; margin: 0; font-size: 0.9em;'>Por 1 contrato</p>
+                    </div>
+                    """.format(riesgo_max), unsafe_allow_html=True)
+
+                # Guía de estrategia
+                with st.expander("📚 Guía de Estrategia para Cuenta Cash"):
+                    st.markdown(f"""
+                    **Para tu cuenta de $1,000:**
+
+                    1. **Compra 1 contrato Call** con strike ${strike_conservador:.2f}
+                    2. **Busca opciones con Delta ~0.30** (probabilidad ~30% ITM)
+                    3. **Vencimiento recomendado:** 30-45 días
+                    4. **Señal detectada:** {signal_data['suggested_strategy']}
+
+                    **Razones del análisis:**
+                    """)
+                    for reason in signal_data['reasons']:
+                        st.write(f"• {reason}")
+
+                st.markdown("---")
+
+    except Exception:
+        # Si hay error, no mostrar la sección de acción rápida
+        pass
+
+
 # ========== FUNCIÓN PRINCIPAL DEL DASHBOARD ==========
 
 def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False, api_key: str = ""):
@@ -501,6 +659,9 @@ def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mod
     # Inicializar símbolo seleccionado
     if 'selected_symbol' not in st.session_state:
         st.session_state['selected_symbol'] = WATCHLIST_SYMBOLS[0]
+
+    # SECCIÓN DE ACCIÓN RÁPIDA (Mobile-First)
+    render_quick_action(strategy_mode, custom_ticker, simulation_mode, api_key)
 
     # Layout de 3 columnas
     col1, col2, col3 = st.columns([1, 2, 1])
