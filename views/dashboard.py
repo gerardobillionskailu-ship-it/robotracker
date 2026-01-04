@@ -7,7 +7,6 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
-import yfinance as yf
 from datetime import datetime, timedelta
 from utils.indicators import TechnicalIndicators, get_support_resistance, fetch_stock_data, generate_synthetic_data
 
@@ -21,8 +20,8 @@ DEFAULT_WATCHLIST = ['CVX', 'SLB', 'HAL', 'XLE']
 
 def render_watchlist(symbols=None):
     """
-    Renderiza la columna de Watchlist con resumen de símbolos.
-    Muestra precio actual, cambio % y selección de símbolo.
+    Renderiza la columna de Watchlist con selección de símbolos.
+    Los precios se muestran en la Tarjeta de Estrategia (Alpha Vantage).
     """
     if not symbols:
         symbols = DEFAULT_WATCHLIST
@@ -31,98 +30,23 @@ def render_watchlist(symbols=None):
 
     selected_symbol = st.session_state.get('selected_symbol', symbols[0] if symbols else 'CVX')
 
-    # Mostrar cada símbolo con métricas básicas
+    # Mostrar cada símbolo como botón seleccionable
     for symbol in symbols:
-        try:
-            ticker = yf.Ticker(symbol)
-
-            # Intentar obtener datos de diferentes fuentes
-            try:
-                info = ticker.info
-                if not info or len(info) == 0:
-                    raise ValueError("Info vacío")
-            except:
-                # Si ticker.info falla, usar history como fallback
-                hist = ticker.history(period='2d')
-                if hist.empty:
-                    raise ValueError("No hay datos históricos disponibles")
-
-                current_price = hist['Close'].iloc[-1]
-                prev_close = hist['Close'].iloc[-2] if len(hist) > 1 else current_price
-                info = {'currentPrice': current_price, 'previousClose': prev_close}
-
-            current_price = info.get('currentPrice', info.get('regularMarketPrice', 0))
-
-            # Si aún no tenemos precio, usar history
-            if not current_price or current_price == 0:
-                hist = ticker.history(period='1d')
-                if not hist.empty:
-                    current_price = hist['Close'].iloc[-1]
-                else:
-                    current_price = 0
-
-            prev_close = info.get('previousClose', current_price)
-
-            if prev_close and prev_close != 0:
-                change_pct = ((current_price - prev_close) / prev_close) * 100
-            else:
-                change_pct = 0
-
-            # Botón seleccionable para cada símbolo
-            col1, col2, col3 = st.columns([2, 2, 2])
-
-            with col1:
-                if st.button(
-                    symbol,
-                    key=f"btn_{symbol}",
-                    use_container_width=True,
-                    type="primary" if symbol == selected_symbol else "secondary"
-                ):
-                    st.session_state['selected_symbol'] = symbol
-                    st.rerun()
-
-            with col2:
-                st.metric(
-                    label="",
-                    value=f"${current_price:.2f}" if current_price else "N/A",
-                    delta=f"{change_pct:+.2f}%" if change_pct else "0.00%"
-                )
-
-        except Exception as e:
-            # Mostrar el botón aunque haya error
-            col1, col2, col3 = st.columns([2, 2, 2])
-            with col1:
-                if st.button(
-                    symbol,
-                    key=f"btn_{symbol}",
-                    use_container_width=True,
-                    type="primary" if symbol == selected_symbol else "secondary"
-                ):
-                    st.session_state['selected_symbol'] = symbol
-                    st.rerun()
-            with col2:
-                st.caption(f"⚠️ Datos no disponibles")
+        if st.button(
+            symbol,
+            key=f"btn_{symbol}",
+            use_container_width=True,
+            type="primary" if symbol == selected_symbol else "secondary"
+        ):
+            st.session_state['selected_symbol'] = symbol
+            st.rerun()
 
     st.divider()
 
-    # Información adicional del símbolo seleccionado
+    # Información del símbolo seleccionado
     if selected_symbol:
-        st.subheader(f"Detalles: {selected_symbol}")
-        try:
-            ticker = yf.Ticker(selected_symbol)
-            info = ticker.info
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Volumen", f"{info.get('volume', 0):,}")
-                st.metric("Market Cap", f"${info.get('marketCap', 0):,.0f}")
-
-            with col2:
-                st.metric("P/E Ratio", f"{info.get('trailingPE', 'N/A')}")
-                st.metric("52W High", f"${info.get('fiftyTwoWeekHigh', 0):.2f}")
-
-        except Exception as e:
-            st.warning(f"No se pudo cargar información adicional: {str(e)}")
+        st.subheader(f"📍 Seleccionado: {selected_symbol}")
+        st.info("💡 Los precios y métricas se muestran en la **Tarjeta de Estrategia** con datos de Alpha Vantage.")
 
 
 # ========== COLUMNA 2: TARJETA DE ESTRATEGIA DINÁMICA ==========
@@ -739,113 +663,63 @@ def render_chart(symbol: str, df: pd.DataFrame, strategy_mode: str):
 def render_news(geopolitical_mode=True):
     """
     Renderiza la columna de noticias.
-    Muestra noticias recientes del símbolo seleccionado.
-    Si falla y geopolitical_mode=True, muestra noticias sobre Venezuela.
+    Si geopolitical_mode=True, muestra alertas sobre Venezuela.
+    Si geopolitical_mode=False, muestra mensaje de contexto de mercado.
     """
     st.header("📰 Noticias")
 
     selected_symbol = st.session_state.get('selected_symbol', DEFAULT_WATCHLIST[0])
 
-    # Mensaje de alerta geopolítica (solo si modo activado)
-    geopolitical_alert = """
-    ⚠️ **Alerta Geopolítica**: La captura de Nicolás Maduro genera alta volatilidad.
-    Se recomienda monitorear contratos de servicios petroleros (SLB/HAL).
-    """ if geopolitical_mode else ""
+    # Noticias fallback sobre Venezuela (solo si modo geopolítico activado)
+    if geopolitical_mode:
+        st.warning("""
+        ⚠️ **Alerta Geopolítica**: La captura de Nicolás Maduro genera alta volatilidad.
+        Se recomienda monitorear contratos de servicios petroleros (SLB/HAL).
+        """)
 
-    # Noticias fallback sobre Venezuela
-    fallback_news = [
-        {
-            'title': '🔴 URGENTE: Captura de Nicolás Maduro sacude mercados energéticos globales',
-            'publisher': 'TradeOlympo Alert',
-            'link': '#',
-            'time_str': 'Hace 1 hora'
-        },
-        {
-            'title': 'SLB y HAL: Contratos petroleros venezolanos bajo revisión ante cambio político',
-            'publisher': 'Energy Markets Today',
-            'link': '#',
-            'time_str': 'Hace 3 horas'
-        },
-        {
-            'title': 'Volatilidad extrema en sector energético tras eventos en Venezuela',
-            'publisher': 'Bloomberg Energy',
-            'link': '#',
-            'time_str': 'Hace 5 horas'
-        },
-        {
-            'title': 'CVX evalúa reapertura de operaciones en Venezuela post-Maduro',
-            'publisher': 'Reuters',
-            'link': '#',
-            'time_str': 'Hace 8 horas'
-        },
-        {
-            'title': 'Analistas proyectan impacto en precios del crudo ante transición venezolana',
-            'publisher': 'Financial Times',
-            'link': '#',
-            'time_str': 'Hace 12 horas'
-        }
-    ]
+        fallback_news = [
+            {
+                'title': '🔴 URGENTE: Captura de Nicolás Maduro sacude mercados energéticos globales',
+                'publisher': 'TradeOlympo Alert',
+                'time_str': 'Hace 1 hora'
+            },
+            {
+                'title': 'SLB y HAL: Contratos petroleros venezolanos bajo revisión ante cambio político',
+                'publisher': 'Energy Markets Today',
+                'time_str': 'Hace 3 horas'
+            },
+            {
+                'title': 'Volatilidad extrema en sector energético tras eventos en Venezuela',
+                'publisher': 'Bloomberg Energy',
+                'time_str': 'Hace 5 horas'
+            },
+            {
+                'title': 'CVX evalúa reapertura de operaciones en Venezuela post-Maduro',
+                'publisher': 'Reuters',
+                'time_str': 'Hace 8 horas'
+            },
+            {
+                'title': 'Analistas proyectan impacto en precios del crudo ante transición venezolana',
+                'publisher': 'Financial Times',
+                'time_str': 'Hace 12 horas'
+            }
+        ]
 
-    try:
-        ticker = yf.Ticker(selected_symbol)
-        news = ticker.news
-
-        if not news or len(news) == 0:
-            # Usar noticias fallback
-            if geopolitical_mode:
-                st.warning(geopolitical_alert)
-                st.info(f"📡 Noticias en vivo no disponibles. Mostrando alertas geopolíticas:")
-                news = fallback_news
-            else:
-                st.info(f"📡 Noticias de {selected_symbol} no disponibles.")
-                return
-            use_fallback = True
-        else:
-            use_fallback = False
-
-        # Mostrar hasta 5 noticias
-        news_to_show = news[:5] if not use_fallback else fallback_news
-
-        for article in news_to_show:
-            if use_fallback:
-                title = article['title']
-                publisher = article['publisher']
-                link = article['link']
-                time_str = article['time_str']
-            else:
-                title = article.get('title', 'Sin título')
-                publisher = article.get('publisher', 'Desconocido')
-                link = article.get('link', '#')
-                publish_time = article.get('providerPublishTime', 0)
-
-                # Convertir timestamp
-                if publish_time:
-                    pub_date = datetime.fromtimestamp(publish_time)
-                    time_ago = datetime.now() - pub_date
-                    if time_ago.days > 0:
-                        time_str = f"Hace {time_ago.days} día(s)"
-                    else:
-                        hours = time_ago.seconds // 3600
-                        time_str = f"Hace {hours} hora(s)"
-                else:
-                    time_str = "Fecha desconocida"
-
-            # Renderizar noticia
-            with st.container():
-                st.markdown(f"**[{title}]({link})**")
-                st.caption(f"📅 {time_str} | 📰 {publisher}")
-                st.divider()
-
-    except Exception as e:
-        # Si hay cualquier error, mostrar alerta geopolítica y noticias fallback
-        st.warning(geopolitical_alert)
-        st.info("📡 Servicio de noticias temporalmente no disponible. Mostrando alertas de mercado:")
+        st.info("📡 Alertas de mercado:")
 
         for article in fallback_news:
             with st.container():
                 st.markdown(f"**{article['title']}**")
                 st.caption(f"📅 {article['time_str']} | 📰 {article['publisher']}")
                 st.divider()
+    else:
+        # Modo universal: mostrar mensaje genérico
+        st.info(f"""
+        📊 **Analizando**: {selected_symbol}
+
+        Para obtener noticias en tiempo real, activa el **Modo Geopolítico** en el sidebar
+        o utiliza fuentes externas como Bloomberg, Reuters o Yahoo Finance.
+        """)
 
 
 # ========== FUNCIÓN PRINCIPAL DEL DASHBOARD ==========
