@@ -65,6 +65,7 @@ The app follows a modular architecture with separation of concerns:
 - Chart rendering with strategy-specific indicators
 
 **utils/indicators.py** (Business Logic)
+- `fetch_stock_data()`: **CRITICAL** - Robust data fetching function with Chrome User-Agent headers to prevent yfinance "Expecting value" JSON errors
 - `TechnicalIndicators` class: Core indicator calculation engine
 - **Larry Williams Strategy**: Williams %R, SMA crossovers (Golden/Death Cross)
 - **Wyckoff Strategy**: Volume analysis, candle position analysis, accumulation/distribution detection
@@ -137,11 +138,68 @@ WATCHLIST_SYMBOLS = ['CVX', 'SLB', 'HAL', 'XLE', 'NEW_SYMBOL']
 
 1. User selects strategy mode in sidebar (app.py)
 2. User selects symbol in watchlist (views/dashboard.py)
-3. Dashboard fetches historical data via yfinance
-4. TechnicalIndicators calculates all indicators
-5. Strategy-specific signal generation method is called
-6. Results are rendered in strategy card with appropriate visualization
-7. Chart is rendered with strategy-specific overlays
+3. Dashboard calls `fetch_stock_data(symbol, period="2y")` from utils/indicators.py
+4. `fetch_stock_data()` configures Chrome User-Agent headers and fetches data via yfinance
+5. DataFrame is validated (not empty, has OHLCV columns, null values filled)
+6. TechnicalIndicators calculates all indicators
+7. Strategy-specific signal generation method is called
+8. Results are rendered in strategy card with appropriate visualization
+9. Chart is rendered with strategy-specific overlays
+
+## Critical Implementation Details
+
+### Robust yfinance Data Fetching
+
+**Problem**: yfinance API frequently returns "Expecting value: line 1 column 1" JSON parsing errors, causing app crashes.
+
+**Solution**: Use `fetch_stock_data()` from `utils/indicators.py`:
+
+```python
+from utils.indicators import fetch_stock_data
+
+# ALWAYS use this instead of yf.Ticker().history() directly
+df = fetch_stock_data(symbol, period="2y")
+```
+
+This function:
+- Creates a yf.Ticker object with custom session
+- Configures Chrome User-Agent headers to bypass API blocks
+- Implements automatic retry with fallback periods (2y → 1y → 6mo → 3mo)
+- Returns empty DataFrame on error (handled gracefully by UI layer)
+
+### DataFrame Validation Pipeline
+
+After fetching data, ALWAYS validate before processing:
+
+```python
+# 1. Check not empty
+if df is None or df.empty or len(df) < 20:
+    # Show error to user
+    return
+
+# 2. Validate required columns
+required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+if any(col not in df.columns for col in required_columns):
+    return
+
+# 3. Handle null values
+if df[required_columns].isnull().any().any():
+    df = df.ffill().bfill()
+
+# 4. Now safe to process
+indicators = TechnicalIndicators(df)
+```
+
+### Fallback News System
+
+When yfinance news API fails, the app shows geopolitical alert about Venezuela:
+
+```
+⚠️ Alerta Geopolítica: La captura de Nicolás Maduro genera alta volatilidad.
+Se recomienda monitorear contratos de servicios petroleros (SLB/HAL).
+```
+
+Fallback news are pre-defined in `views/dashboard.py` and focus on the Venezuela regime change impact on energy sector stocks.
 
 ## Error Handling Philosophy
 

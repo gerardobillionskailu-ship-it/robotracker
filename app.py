@@ -78,6 +78,30 @@ def render_sidebar():
 
         st.markdown("---")
 
+        # Ticker personalizado
+        st.subheader("🔧 Configuración Avanzada")
+
+        custom_ticker = st.text_input(
+            "Ticker Manual (opcional)",
+            placeholder="Ej: XOM, CVX.MX, AAPL",
+            help="Ingresa un ticker personalizado para analizar. Deja vacío para usar watchlist."
+        )
+
+        # Modo Simulación
+        simulation_mode = st.toggle(
+            "🎮 Modo Simulación",
+            value=False,
+            help="""
+            Genera datos sintéticos alcistas simulando un rally por cambio de régimen en Venezuela.
+            Útil cuando yfinance API está bloqueada o para demos.
+            """
+        )
+
+        if simulation_mode:
+            st.warning("⚡ Modo Simulación Activo: Usando datos sintéticos")
+
+        st.markdown("---")
+
         # Información de cuenta
         st.subheader("💼 Tipo de Cuenta")
         st.info("**Cuenta Cash** (por defecto)")
@@ -136,7 +160,7 @@ def render_sidebar():
         # Footer
         st.caption(f"© 2024 TradeOlympo | {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
-    return strategy_mode
+    return strategy_mode, custom_ticker, simulation_mode
 
 
 # ========== FUNCIÓN PRINCIPAL ==========
@@ -152,22 +176,24 @@ def main():
         st.markdown("*Estrategias inteligentes para cuentas Cash*")
 
         # Renderizar sidebar y obtener configuración
-        strategy_mode = render_sidebar()
+        strategy_mode, custom_ticker, simulation_mode = render_sidebar()
 
         # Mensaje de bienvenida (solo primera vez)
         if 'first_load' not in st.session_state:
             st.session_state['first_load'] = True
+            mode_text = "🎮 Simulación" if simulation_mode else strategy_mode
+            ticker_text = f" analizando **{custom_ticker}**" if custom_ticker else ""
             st.info(f"""
             ¡Bienvenido a TradeOlympo!
 
-            Has seleccionado el modo **{strategy_mode}**.
+            Modo: **{mode_text}**{ticker_text}
             Selecciona un símbolo en el Watchlist para comenzar el análisis.
             """)
 
         st.markdown("---")
 
         # Renderizar dashboard principal
-        render_dashboard(strategy_mode)
+        render_dashboard(strategy_mode, custom_ticker, simulation_mode)
 
     except Exception as e:
         # Manejo elegante de errores
