@@ -221,67 +221,98 @@ def render_strategy_card(strategy_mode: str, custom_ticker: str = "", simulation
 
 
 def render_larry_williams_card(symbol: str, signal_data: dict, df: pd.DataFrame):
-    """Renderiza la tarjeta específica para Larry Williams"""
+    """Renderiza la tarjeta específica para Larry Williams con UI mejorada"""
 
     # Señal principal
     signal = signal_data['signal']
     strength = signal_data['strength']
+    current_price = df['Close'].iloc[-1]
+    latest = df.iloc[-1]
 
-    # Color según señal
+    # Calcular target (precio objetivo) based on signal
     if signal == 'BUY':
-        signal_color = '🟢'
-        bg_color = '#d4edda'
+        target_price = current_price * 1.10  # +10% target
     elif signal == 'SELL':
-        signal_color = '🔴'
-        bg_color = '#f8d7da'
+        target_price = current_price * 0.90  # -10% target
     else:
-        signal_color = '🟡'
-        bg_color = '#fff3cd'
+        target_price = current_price
 
-    st.markdown(f"""
-    <div style='background-color: {bg_color}; padding: 20px; border-radius: 10px; margin-bottom: 20px;'>
-        <h2 style='text-align: center;'>{signal_color} {signal}</h2>
-        <p style='text-align: center; font-size: 18px;'>Confianza: {strength}%</p>
-    </div>
-    """, unsafe_allow_html=True)
+    # MÉTRICAS PRINCIPALES (Precio, Target, Confianza)
+    col1, col2, col3 = st.columns(3)
 
-    # Estrategia recomendada
-    st.subheader("💡 Estrategia Recomendada (Cuenta Cash)")
-    st.info(signal_data['suggested_strategy'])
+    with col1:
+        st.metric(
+            label="💰 Precio Actual",
+            value=f"${current_price:.2f}",
+            delta=None
+        )
 
-    # Cálculo dinámico del Strike para Long Call
+    with col2:
+        delta_target = ((target_price - current_price) / current_price) * 100
+        st.metric(
+            label="🎯 Target",
+            value=f"${target_price:.2f}",
+            delta=f"{delta_target:+.1f}%"
+        )
+
+    with col3:
+        st.metric(
+            label="📊 Confianza",
+            value=f"{strength}%",
+            delta=None
+        )
+
+    st.markdown("---")
+
+    # ALERTA DE ACCIÓN CLARA
     if signal == 'BUY':
-        current_price = df['Close'].iloc[-1]
-        # Strike Out-of-the-Money (OTM): 5-10% arriba del precio actual
         strike_5pct = current_price * 1.05
-        strike_10pct = current_price * 1.10
+        st.success(f"""
+        ### 🟢 ACCIÓN: COMPRAR CALL STRIKE ${strike_5pct:.2f}
+        **Estrategia:** Long Call (Cuenta Cash)
+        **Razón:** {signal_data['suggested_strategy']}
+        """)
 
-        st.subheader("📞 Strikes Recomendados para Long Call")
-        col1, col2, col3 = st.columns(3)
-
+        # Strikes recomendados
+        col1, col2 = st.columns(2)
         with col1:
-            st.metric("Precio Actual", f"${current_price:.2f}")
-
+            st.metric("📞 Strike Conservador (+5%)", f"${strike_5pct:.2f}")
         with col2:
-            st.metric("Strike +5% OTM", f"${strike_5pct:.2f}",
-                     help="Más conservador, mayor probabilidad de ganancia")
+            st.metric("📞 Strike Agresivo (+10%)", f"${current_price * 1.10:.2f}")
 
-        with col3:
-            st.metric("Strike +10% OTM", f"${strike_10pct:.2f}",
-                     help="Más agresivo, mayor potencial de retorno")
+    elif signal == 'SELL':
+        st.warning(f"""
+        ### 🔴 ACCIÓN: NO COMPRAR / CONSIDERAR VENTA
+        **Razón:** {signal_data['suggested_strategy']}
+        """)
 
-        st.caption("💡 Strikes OTM (Out-of-the-Money) ofrecen mejor relación riesgo/beneficio para cuentas Cash")
+    else:
+        st.info(f"""
+        ### 🟡 ACCIÓN: ESPERAR MEJOR PUNTO DE ENTRADA
+        **Razón:** {signal_data['suggested_strategy']}
+        """)
 
-    # Razones
-    st.subheader("📋 Análisis")
+    st.markdown("---")
+
+    # Explicación del indicador
+    with st.expander("📚 ¿Qué es Larry Williams %R?"):
+        st.markdown("""
+        **Williams %R** mide el momentum del precio en una escala de -100 a 0.
+
+        - **< -80 (Sobreventa)**: El precio está muy bajo, posible rebote alcista 📈
+        - **> -20 (Sobrecompra)**: El precio está muy alto, posible corrección bajista 📉
+
+        Las **Medias Móviles** (SMA) muestran la tendencia: cuando el precio cruza sobre las medias, es señal alcista.
+        """)
+
+    # Razones del análisis
+    st.subheader("📋 Análisis Detallado")
     for reason in signal_data['reasons']:
         st.write(f"• {reason}")
 
-    # Métricas clave
-    st.subheader("📊 Métricas Larry Williams")
+    # Métricas técnicas
+    st.subheader("📊 Indicadores Técnicos")
     col1, col2, col3 = st.columns(3)
-
-    latest = df.iloc[-1]
 
     with col1:
         st.metric(
@@ -304,66 +335,97 @@ def render_larry_williams_card(symbol: str, signal_data: dict, df: pd.DataFrame)
 
 
 def render_wyckoff_card(symbol: str, signal_data: dict, df: pd.DataFrame):
-    """Renderiza la tarjeta específica para Wyckoff"""
+    """Renderiza la tarjeta específica para Wyckoff con UI mejorada"""
 
     signal = signal_data['signal']
     strength = signal_data['strength']
+    current_price = df['Close'].iloc[-1]
+    latest = df.iloc[-1]
 
-    # Color según señal
+    # Calcular target based on signal
     if signal == 'BUY':
-        signal_color = '🟢'
-        bg_color = '#d4edda'
+        target_price = current_price * 1.10  # +10% target
     elif signal == 'SELL':
-        signal_color = '🔴'
-        bg_color = '#f8d7da'
+        target_price = current_price * 0.90  # -10% target
     else:
-        signal_color = '🟡'
-        bg_color = '#fff3cd'
+        target_price = current_price
 
-    st.markdown(f"""
-    <div style='background-color: {bg_color}; padding: 20px; border-radius: 10px; margin-bottom: 20px;'>
-        <h2 style='text-align: center;'>{signal_color} {signal}</h2>
-        <p style='text-align: center; font-size: 18px;'>Confianza: {strength}%</p>
-    </div>
-    """, unsafe_allow_html=True)
+    # MÉTRICAS PRINCIPALES (Precio, Target, Confianza)
+    col1, col2, col3 = st.columns(3)
 
-    # Estrategia recomendada
-    st.subheader("💡 Estrategia Recomendada (Cuenta Cash)")
-    st.info(signal_data['suggested_strategy'])
+    with col1:
+        st.metric(
+            label="💰 Precio Actual",
+            value=f"${current_price:.2f}",
+            delta=None
+        )
 
-    # Cálculo dinámico del Strike para Long Call
+    with col2:
+        delta_target = ((target_price - current_price) / current_price) * 100
+        st.metric(
+            label="🎯 Target",
+            value=f"${target_price:.2f}",
+            delta=f"{delta_target:+.1f}%"
+        )
+
+    with col3:
+        st.metric(
+            label="📊 Confianza",
+            value=f"{strength}%",
+            delta=None
+        )
+
+    st.markdown("---")
+
+    # ALERTA DE ACCIÓN CLARA
     if signal == 'BUY':
-        current_price = df['Close'].iloc[-1]
-        # Strike Out-of-the-Money (OTM): 5-10% arriba del precio actual
         strike_5pct = current_price * 1.05
-        strike_10pct = current_price * 1.10
+        st.success(f"""
+        ### 🟢 ACCIÓN: COMPRAR CALL STRIKE ${strike_5pct:.2f}
+        **Estrategia:** Long Call (Cuenta Cash)
+        **Razón:** {signal_data['suggested_strategy']}
+        """)
 
-        st.subheader("📞 Strikes Recomendados para Long Call")
-        col1, col2, col3 = st.columns(3)
-
+        # Strikes recomendados
+        col1, col2 = st.columns(2)
         with col1:
-            st.metric("Precio Actual", f"${current_price:.2f}")
-
+            st.metric("📞 Strike Conservador (+5%)", f"${strike_5pct:.2f}")
         with col2:
-            st.metric("Strike +5% OTM", f"${strike_5pct:.2f}",
-                     help="Más conservador, mayor probabilidad de ganancia")
+            st.metric("📞 Strike Agresivo (+10%)", f"${current_price * 1.10:.2f}")
 
-        with col3:
-            st.metric("Strike +10% OTM", f"${strike_10pct:.2f}",
-                     help="Más agresivo, mayor potencial de retorno")
+    elif signal == 'SELL':
+        st.warning(f"""
+        ### 🔴 ACCIÓN: NO COMPRAR / CONSIDERAR VENTA
+        **Razón:** {signal_data['suggested_strategy']}
+        """)
 
-        st.caption("💡 Strikes OTM (Out-of-the-Money) ofrecen mejor relación riesgo/beneficio para cuentas Cash")
+    else:
+        st.info(f"""
+        ### 🟡 ACCIÓN: ESPERAR MEJOR PUNTO DE ENTRADA
+        **Razón:** {signal_data['suggested_strategy']}
+        """)
 
-    # Razones
-    st.subheader("📋 Análisis Wyckoff")
+    st.markdown("---")
+
+    # Explicación del indicador
+    with st.expander("📚 ¿Qué es el Método Wyckoff?"):
+        st.markdown("""
+        **Wyckoff** analiza el volumen y la posición del cierre para identificar acumulación o distribución.
+
+        - **Alto volumen + cierre arriba (>70%)**: Instituciones acumulando (COMPRA) 🐋📈
+        - **Alto volumen + cierre abajo (<30%)**: Instituciones distribuyendo (VENTA) 🐋📉
+
+        Cuando el "dinero inteligente" acumula, el precio tiende a subir. Cuando distribuye, tiende a bajar.
+        """)
+
+    # Razones del análisis
+    st.subheader("📋 Análisis Detallado")
     for reason in signal_data['reasons']:
         st.write(f"• {reason}")
 
-    # Métricas clave
+    # Métricas técnicas
     st.subheader("📊 Métricas Wyckoff")
     col1, col2 = st.columns(2)
-
-    latest = df.iloc[-1]
 
     with col1:
         st.metric(
@@ -384,10 +446,10 @@ def render_wyckoff_card(symbol: str, signal_data: dict, df: pd.DataFrame):
     col1, col2 = st.columns(2)
 
     with col1:
-        st.metric("Soporte", f"${support:.2f}")
+        st.metric("📍 Soporte", f"${support:.2f}")
 
     with col2:
-        st.metric("Resistencia", f"${resistance:.2f}")
+        st.metric("📍 Resistencia", f"${resistance:.2f}")
 
 
 def render_chart(symbol: str, df: pd.DataFrame, strategy_mode: str):
@@ -517,12 +579,41 @@ def render_chart(symbol: str, df: pd.DataFrame, strategy_mode: str):
             row=2, col=1
         )
 
-    # Layout
+    # Layout con tema oscuro y diseño profesional
     fig.update_layout(
+        template='plotly_dark',  # Tema oscuro
         height=700,
         showlegend=True,
         xaxis_rangeslider_visible=False,
-        hovermode='x unified'
+        hovermode='x unified',
+        paper_bgcolor='#0E1117',  # Fondo oscuro de Streamlit
+        plot_bgcolor='#262730',   # Fondo del gráfico
+        font=dict(color='white', size=12),
+        title=dict(
+            text=f"<b>{symbol}</b> - Análisis {strategy_mode}",
+            font=dict(size=20, color='white'),
+            x=0.5,
+            xanchor='center'
+        ),
+        margin=dict(l=50, r=50, t=80, b=50),
+        # Configurar colores de velas
+        xaxis=dict(
+            gridcolor='#3E3E3E',
+            showgrid=True
+        ),
+        yaxis=dict(
+            gridcolor='#3E3E3E',
+            showgrid=True
+        )
+    )
+
+    # Configurar colores de velas (verde/rojo vibrantes)
+    fig.update_traces(
+        increasing_line_color='#00FF41',  # Verde neón
+        decreasing_line_color='#FF073A',  # Rojo vibrante
+        increasing_fillcolor='#00FF41',
+        decreasing_fillcolor='#FF073A',
+        selector=dict(type='candlestick')
     )
 
     st.plotly_chart(fig, use_container_width=True)
