@@ -294,6 +294,62 @@ def render_larry_williams_card(symbol: str, signal_data: dict, df: pd.DataFrame)
 
     st.markdown("---")
 
+    # CALCULADORA DE GESTIÓN DE RIESGO (Regla 2-10%)
+    if signal == 'BUY':
+        st.subheader("💰 Gestión de Riesgo (Capital: $1,000)")
+
+        # Estimación de prima (aproximadamente 3-5% del precio de la acción para ATM)
+        strike_price = current_price * 1.05  # Strike conservador +5%
+        prima_estimada = current_price * 0.04  # 4% del precio de la acción
+        costo_contrato = prima_estimada * 100  # 1 contrato = 100 acciones
+
+        # Validación de riesgo
+        MAX_PRIMA = 150  # 15% del capital de $1,000
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                "Costo Estimado (1 contrato)",
+                f"${costo_contrato:.2f}",
+                help=f"Prima estimada ~${prima_estimada:.2f}/acción × 100"
+            )
+
+        with col2:
+            stop_loss = costo_contrato * 0.75  # Vender si pierde 25%
+            st.metric(
+                "Stop Loss (-25%)",
+                f"${stop_loss:.2f}",
+                delta=f"-${costo_contrato - stop_loss:.2f}",
+                delta_color="inverse",
+                help="Salir si la opción pierde 25% de su valor"
+            )
+
+        with col3:
+            take_profit = costo_contrato * 1.50  # Vender si gana 50%
+            st.metric(
+                "Take Profit (+50%)",
+                f"${take_profit:.2f}",
+                delta=f"+${take_profit - costo_contrato:.2f}",
+                help="Salir si la opción gana 50% de valor"
+            )
+
+        # Advertencia de riesgo
+        if costo_contrato > MAX_PRIMA:
+            st.error(f"""
+            ⚠️ **RIESGO ALTO**: El costo estimado (${costo_contrato:.2f}) supera el límite recomendado de ${MAX_PRIMA} (15% del capital).
+
+            **Recomendación**: Considera esperar una mejor oportunidad o usar un strike más alejado (OTM) con prima menor.
+            """)
+        else:
+            st.success(f"""
+            ✅ **RIESGO CONTROLADO**: El costo estimado (${costo_contrato:.2f}) está dentro del límite de ${MAX_PRIMA} (15% del capital).
+
+            **Capital restante**: ${1000 - costo_contrato:.2f} disponible para diversificación.
+            """)
+
+        st.markdown("---")
+
     # Explicación del indicador
     with st.expander("📚 ¿Qué es Larry Williams %R?"):
         st.markdown("""
@@ -406,6 +462,62 @@ def render_wyckoff_card(symbol: str, signal_data: dict, df: pd.DataFrame):
         """)
 
     st.markdown("---")
+
+    # CALCULADORA DE GESTIÓN DE RIESGO (Regla 2-10%)
+    if signal == 'BUY':
+        st.subheader("💰 Gestión de Riesgo (Capital: $1,000)")
+
+        # Estimación de prima (aproximadamente 3-5% del precio de la acción para ATM)
+        strike_price = current_price * 1.05  # Strike conservador +5%
+        prima_estimada = current_price * 0.04  # 4% del precio de la acción
+        costo_contrato = prima_estimada * 100  # 1 contrato = 100 acciones
+
+        # Validación de riesgo
+        MAX_PRIMA = 150  # 15% del capital de $1,000
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                "Costo Estimado (1 contrato)",
+                f"${costo_contrato:.2f}",
+                help=f"Prima estimada ~${prima_estimada:.2f}/acción × 100"
+            )
+
+        with col2:
+            stop_loss = costo_contrato * 0.75  # Vender si pierde 25%
+            st.metric(
+                "Stop Loss (-25%)",
+                f"${stop_loss:.2f}",
+                delta=f"-${costo_contrato - stop_loss:.2f}",
+                delta_color="inverse",
+                help="Salir si la opción pierde 25% de su valor"
+            )
+
+        with col3:
+            take_profit = costo_contrato * 1.50  # Vender si gana 50%
+            st.metric(
+                "Take Profit (+50%)",
+                f"${take_profit:.2f}",
+                delta=f"+${take_profit - costo_contrato:.2f}",
+                help="Salir si la opción gana 50% de valor"
+            )
+
+        # Advertencia de riesgo
+        if costo_contrato > MAX_PRIMA:
+            st.error(f"""
+            ⚠️ **RIESGO ALTO**: El costo estimado (${costo_contrato:.2f}) supera el límite recomendado de ${MAX_PRIMA} (15% del capital).
+
+            **Recomendación**: Considera esperar una mejor oportunidad o usar un strike más alejado (OTM) con prima menor.
+            """)
+        else:
+            st.success(f"""
+            ✅ **RIESGO CONTROLADO**: El costo estimado (${costo_contrato:.2f}) está dentro del límite de ${MAX_PRIMA} (15% del capital).
+
+            **Capital restante**: ${1000 - costo_contrato:.2f} disponible para diversificación.
+            """)
+
+        st.markdown("---")
 
     # Explicación del indicador
     with st.expander("📚 ¿Qué es el Método Wyckoff?"):

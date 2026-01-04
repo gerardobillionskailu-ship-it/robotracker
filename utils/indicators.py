@@ -7,10 +7,12 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Tuple
 import yfinance as yf
+import streamlit as st
 
 
 # ========== FUNCIONES DE DESCARGA ROBUSTA ==========
 
+@st.cache_data(ttl=3600)  # Cache por 1 hora
 def generate_synthetic_data(symbol: str, days: int = 500) -> pd.DataFrame:
     """
     Genera datos sintéticos alcistas simulando el 'Rally por cambio de régimen en Venezuela'.
@@ -87,6 +89,7 @@ def generate_synthetic_data(symbol: str, days: int = 500) -> pd.DataFrame:
     return df
 
 
+@st.cache_data(ttl=3600)  # Cache por 1 hora para evitar rate limits
 def fetch_stock_data(symbol: str, period: str = "2y", _retry_count: int = 0) -> pd.DataFrame:
     """
     Descarga datos de acciones de forma robusta usando yfinance.
