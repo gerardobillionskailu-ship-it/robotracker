@@ -14,22 +14,25 @@ from utils.indicators import TechnicalIndicators, get_support_resistance, fetch_
 
 # ========== CONFIGURACIÓN ==========
 
-WATCHLIST_SYMBOLS = ['CVX', 'SLB', 'HAL', 'XLE']
+DEFAULT_WATCHLIST = ['CVX', 'SLB', 'HAL', 'XLE']
 
 
 # ========== COLUMNA 1: WATCHLIST ==========
 
-def render_watchlist():
+def render_watchlist(symbols=None):
     """
     Renderiza la columna de Watchlist con resumen de símbolos.
     Muestra precio actual, cambio % y selección de símbolo.
     """
+    if not symbols:
+        symbols = DEFAULT_WATCHLIST
+
     st.header("📊 Watchlist")
 
-    selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
+    selected_symbol = st.session_state.get('selected_symbol', symbols[0] if symbols else 'CVX')
 
     # Mostrar cada símbolo con métricas básicas
-    for symbol in WATCHLIST_SYMBOLS:
+    for symbol in symbols:
         try:
             ticker = yf.Ticker(symbol)
 
@@ -733,21 +736,21 @@ def render_chart(symbol: str, df: pd.DataFrame, strategy_mode: str):
 
 # ========== COLUMNA 3: NOTICIAS ==========
 
-def render_news():
+def render_news(geopolitical_mode=True):
     """
     Renderiza la columna de noticias.
     Muestra noticias recientes del símbolo seleccionado.
-    Si falla, muestra noticias estáticas sobre Venezuela.
+    Si falla y geopolitical_mode=True, muestra noticias sobre Venezuela.
     """
     st.header("📰 Noticias")
 
-    selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
+    selected_symbol = st.session_state.get('selected_symbol', DEFAULT_WATCHLIST[0])
 
-    # Mensaje de alerta geopolítica
+    # Mensaje de alerta geopolítica (solo si modo activado)
     geopolitical_alert = """
     ⚠️ **Alerta Geopolítica**: La captura de Nicolás Maduro genera alta volatilidad.
     Se recomienda monitorear contratos de servicios petroleros (SLB/HAL).
-    """
+    """ if geopolitical_mode else ""
 
     # Noticias fallback sobre Venezuela
     fallback_news = [
@@ -788,10 +791,14 @@ def render_news():
         news = ticker.news
 
         if not news or len(news) == 0:
-            # Usar noticias fallback con alerta geopolítica
-            st.warning(geopolitical_alert)
-            st.info(f"📡 Noticias en vivo no disponibles. Mostrando alertas de mercado:")
-            news = fallback_news
+            # Usar noticias fallback
+            if geopolitical_mode:
+                st.warning(geopolitical_alert)
+                st.info(f"📡 Noticias en vivo no disponibles. Mostrando alertas geopolíticas:")
+                news = fallback_news
+            else:
+                st.info(f"📡 Noticias de {selected_symbol} no disponibles.")
+                return
             use_fallback = True
         else:
             use_fallback = False
@@ -843,7 +850,7 @@ def render_news():
 
 # ========== FUNCIÓN PRINCIPAL DEL DASHBOARD ==========
 
-def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False):
+def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False, watchlist_symbols=None, geopolitical_mode=True):
     """
     Renderiza el dashboard completo con las 3 columnas.
 
@@ -851,19 +858,24 @@ def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mod
         strategy_mode: 'Larry Williams' o 'Wyckoff'
         custom_ticker: Ticker personalizado ingresado por el usuario
         simulation_mode: Si True, usa datos sintéticos
+        watchlist_symbols: Lista de símbolos para el watchlist
+        geopolitical_mode: Si True, muestra alertas sobre Venezuela
     """
     # Inicializar símbolo seleccionado
+    if not watchlist_symbols:
+        watchlist_symbols = DEFAULT_WATCHLIST
+
     if 'selected_symbol' not in st.session_state:
-        st.session_state['selected_symbol'] = WATCHLIST_SYMBOLS[0]
+        st.session_state['selected_symbol'] = watchlist_symbols[0] if watchlist_symbols else 'CVX'
 
     # Layout de 3 columnas
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col1:
-        render_watchlist()
+        render_watchlist(watchlist_symbols)
 
     with col2:
         render_strategy_card(strategy_mode, custom_ticker, simulation_mode)
 
     with col3:
-        render_news()
+        render_news(geopolitical_mode)

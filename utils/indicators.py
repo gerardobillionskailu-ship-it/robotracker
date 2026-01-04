@@ -6,7 +6,6 @@ Implementa estrategias de análisis técnico para identificar oportunidades de t
 import pandas as pd
 import numpy as np
 from typing import Dict, Tuple
-import yfinance as yf
 import streamlit as st
 
 
@@ -14,155 +13,84 @@ import streamlit as st
 
 @st.cache_data(ttl=3600)  # Cache por 1 hora
 def generate_synthetic_data(symbol: str, days: int = 500) -> pd.DataFrame:
-    """
-    Genera datos sintéticos alcistas simulando el 'Rally por cambio de régimen en Venezuela'.
-
-    Args:
-        symbol: Símbolo del ticker (para referencia)
-        days: Número de días de datos a generar
-
-    Returns:
-        DataFrame con datos OHLCV sintéticos con tendencia alcista
-    """
+    """Genera datos sintéticos alcistas simulando el 'Rally por cambio de régimen en Venezuela'."""
     from datetime import datetime, timedelta
 
-    # Precio base según símbolo
-    base_prices = {
-        'CVX': 150,
-        'SLB': 50,
-        'HAL': 35,
-        'XLE': 80
-    }
+    base_prices = {'CVX': 150, 'SLB': 50, 'HAL': 35, 'XLE': 80}
     base_price = base_prices.get(symbol, 100)
-
-    # Generar fechas
     end_date = datetime.now()
     dates = pd.date_range(end=end_date, periods=days, freq='D')
 
-    # Generar tendencia alcista con volatilidad
-    np.random.seed(42)  # Para reproducibilidad
-
-    # Tendencia alcista: +50% en el período
+    np.random.seed(42)
     trend = np.linspace(0, 0.5, days)
-
-    # Volatilidad diaria (2-5%)
     volatility = np.random.randn(days) * 0.025
-
-    # Precio de cierre con tendencia + volatilidad
     close_prices = base_price * (1 + trend + volatility.cumsum() * 0.1)
 
-    # Generar OHLC a partir del cierre
     data = []
     for i, (date, close) in enumerate(zip(dates, close_prices)):
-        # High/Low dentro de ±2% del cierre
         daily_range = close * 0.02
         high = close + np.random.uniform(0, daily_range)
         low = close - np.random.uniform(0, daily_range)
+        open_price = close * 0.99 if i == 0 else close_prices[i-1] * (1 + np.random.uniform(-0.01, 0.01))
 
-        # Open cercano al cierre anterior
-        if i == 0:
-            open_price = close * 0.99
-        else:
-            open_price = close_prices[i-1] * (1 + np.random.uniform(-0.01, 0.01))
-
-        # Volumen con picos ocasionales (simulando acumulación Wyckoff)
         base_volume = 5_000_000
-        volume_spike = 1 if np.random.random() > 0.85 else 0  # 15% de probabilidad
+        volume_spike = 1 if np.random.random() > 0.85 else 0
         volume = base_volume * (1 + volume_spike * 2) * (1 + np.random.uniform(-0.3, 0.5))
 
-        data.append({
-            'Open': open_price,
-            'High': high,
-            'Low': low,
-            'Close': close,
-            'Volume': int(volume)
-        })
+        data.append({'Open': open_price, 'High': high, 'Low': low, 'Close': close, 'Volume': int(volume)})
 
     df = pd.DataFrame(data, index=dates)
     df.index.name = 'Date'
 
-    # Simular últimas velas con fortaleza alcista (para Wyckoff)
     for i in range(-10, 0):
-        df.iloc[i, df.columns.get_loc('Close')] = df.iloc[i, df.columns.get_loc('High')] * 0.95  # Cierre cerca del máximo
-        df.iloc[i, df.columns.get_loc('Volume')] *= 1.8  # Volumen alto
+        df.iloc[i, df.columns.get_loc('Close')] = df.iloc[i, df.columns.get_loc('High')] * 0.95
+        df.iloc[i, df.columns.get_loc('Volume')] *= 1.8
 
     return df
 
 
-@st.cache_data(ttl=3600)  # Cache por 1 hora para evitar rate limits
-def fetch_stock_data(symbol: str, period: str = "2y", _retry_count: int = 0) -> pd.DataFrame:
-    """
-    Descarga datos de acciones de forma robusta usando yfinance.
-
-    Implementa User-Agent, requests-cache y fallback automático para evitar bloqueos.
-
-    Args:
-        symbol: Símbolo del ticker (ej: 'CVX', 'SLB', 'AAPL')
-        period: Período de datos ('1y', '2y', '6mo', etc.)
-        _retry_count: Contador interno de reintentos (no usar manualmente)
-
-    Returns:
-        DataFrame con datos OHLCV o DataFrame vacío si hay error
-    """
+@st.cache_data(ttl=3600)  # Cache 1h para no saturar Alpha Vantage (5 calls/min)
+def fetch_stock_data_alphavantage(symbol: str, api_key: str) -> pd.DataFrame:
+    """Descarga datos reales usando SOLO Alpha Vantage (sin yfinance)."""
     try:
-        # Configurar requests-cache para evitar bloqueos de IP
-        import requests
-        import requests_cache
+        from alpha_vantage.timeseries import TimeSeries
 
-        # Crear sesión con caché (válida por 1 hora)
-        session = requests_cache.CachedSession(
-            'yfinance_cache',
-            backend='memory',
-            expire_after=3600  # 1 hora
-        )
+        ts = TimeSeries(key=api_key, output_format='pandas')
+        data, meta_data = ts.get_daily(symbol=symbol, outputsize='full')
 
-        # Configurar headers para evitar bloqueos (User-Agent de Chrome)
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Referer': 'https://finance.yahoo.com/'
+        # Mapeo de columnas Alpha Vantage → formato estándar
+        df = data.rename(columns={
+            '1. open': 'Open',
+            '2. high': 'High',
+            '3. low': 'Low',
+            '4. close': 'Close',
+            '5. volume': 'Volume'
         })
 
-        # Crear objeto Ticker con sesión cacheada
-        ticker = yf.Ticker(symbol, session=session)
+        df = df.sort_index()
+        df = df.tail(500)  # ~2 años
 
-        # Descargar datos históricos
-        df = ticker.history(period=period)
+        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
 
-        # Validar que el DataFrame no esté vacío
-        if df.empty:
-            # Intentar fallback a variantes internacionales si es el primer intento
-            if _retry_count == 0:
-                # Intentar con .MX (México)
-                df_mx = fetch_stock_data(symbol + ".MX", period, _retry_count=1)
-                if not df_mx.empty:
-                    return df_mx
-
-                # Intentar con .SA (Brasil)
-                df_sa = fetch_stock_data(symbol + ".SA", period, _retry_count=1)
-                if not df_sa.empty:
-                    return df_sa
-
-            # Intentar con período más corto
-            if period == "2y":
-                return fetch_stock_data(symbol, "1y", _retry_count)
-            elif period == "1y":
-                return fetch_stock_data(symbol, "6mo", _retry_count)
-            elif period == "6mo":
-                return fetch_stock_data(symbol, "3mo", _retry_count)
-            else:
-                return pd.DataFrame()
-
+        df = df.ffill().bfill()
         return df
 
     except Exception as e:
-        # En caso de error, retornar DataFrame vacío
-        # El error será manejado en la capa de UI
+        return pd.DataFrame()
+
+
+def fetch_stock_data(symbol: str, period: str = "2y") -> pd.DataFrame:
+    """
+    Wrapper que usa Alpha Vantage desde secrets.
+    Si no hay API key, retorna DataFrame vacío (forzará modo simulación).
+    """
+    try:
+        api_key = st.secrets.get("ALPHAVANTAGE_API_KEY", "")
+        if not api_key:
+            return pd.DataFrame()
+        return fetch_stock_data_alphavantage(symbol, api_key)
+    except Exception:
         return pd.DataFrame()
 
 
