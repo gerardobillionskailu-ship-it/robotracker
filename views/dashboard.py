@@ -9,7 +9,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
-from utils.indicators import TechnicalIndicators, get_support_resistance
+from utils.indicators import TechnicalIndicators, get_support_resistance, fetch_stock_data, fetch_stock_data_alphavantage, generate_synthetic_data
 
 
 # ========== CONFIGURACIÓN ==========
@@ -88,25 +88,72 @@ def render_watchlist():
 
 # ========== COLUMNA 2: TARJETA DE ESTRATEGIA DINÁMICA ==========
 
-def render_strategy_card(strategy_mode: str):
+def render_strategy_card(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False, api_key: str = ""):
     """
     Renderiza la tarjeta de estrategia que cambia dinámicamente
     según el indicador seleccionado.
 
     Args:
         strategy_mode: 'Larry Williams' o 'Wyckoff'
+        custom_ticker: Ticker personalizado ingresado por el usuario
+        simulation_mode: Si True, usa datos sintéticos
+        api_key: Alpha Vantage API Key para datos reales
     """
     st.header("🎯 Estrategia de Trading")
 
-    selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
+    # Usar ticker personalizado si está presente, sino usar del watchlist
+    if custom_ticker and custom_ticker.strip():
+        selected_symbol = custom_ticker.strip().upper()
+        st.info(f"📊 Analizando ticker personalizado: **{selected_symbol}**")
+    else:
+        selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
 
     try:
-        # Obtener datos históricos
-        ticker = yf.Ticker(selected_symbol)
-        df = ticker.history(period='1y')
+        # Obtener datos: sintéticos o reales
+        if simulation_mode:
+            st.success("🎮 Usando datos sintéticos - Rally por cambio de régimen en Venezuela")
+            df = generate_synthetic_data(selected_symbol, days=500)
+        elif api_key:
+            # Usar Alpha Vantage para datos reales
+            st.success(f"✅ Descargando datos reales de **{selected_symbol}** via Alpha Vantage...")
+            df = fetch_stock_data_alphavantage(selected_symbol, api_key)
+        else:
+            # Fallback a yfinance (aunque puede estar bloqueado)
+            st.warning("⚠️ Sin API Key - Intentando con yfinance (puede fallar)")
+            df = fetch_stock_data(selected_symbol, period="2y")
 
-        if df.empty:
-            st.error(f"No se pudieron obtener datos para {selected_symbol}")
+        # Validar que el DataFrame no esté vacío y tenga suficientes datos
+        if df is None or df.empty or len(df) < 20:
+            st.error(f"❌ No se pudieron obtener suficientes datos para {selected_symbol}")
+            st.info("""
+            **Posibles causas:**
+            - El símbolo no existe o está mal escrito
+            - Problemas de conexión con la API
+            - El símbolo no tiene datos históricos disponibles
+
+            **Sugerencias:**
+            - Intenta con otro símbolo del watchlist
+            - Verifica tu API Key de Alpha Vantage
+            - Activa el Modo Simulación para ver una demo
+            """)
+            return
+
+        # Validar que tenemos las columnas necesarias
+        required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+
+        if missing_columns:
+            st.error(f"❌ Faltan columnas en los datos: {', '.join(missing_columns)}")
+            return
+
+        # Validar que no haya valores nulos en columnas críticas
+        if df[required_columns].isnull().any().any():
+            st.warning("⚠️ Algunos datos contienen valores nulos. Rellenando...")
+            df = df.ffill().bfill()
+
+        # Verificar nuevamente que tengamos datos válidos
+        if df.empty or len(df) < 20:
+            st.error("❌ Datos insuficientes después de validación")
             return
 
         # Calcular indicadores
@@ -441,12 +488,15 @@ def render_news():
 
 # ========== FUNCIÓN PRINCIPAL DEL DASHBOARD ==========
 
-def render_dashboard(strategy_mode: str):
+def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False, api_key: str = ""):
     """
     Renderiza el dashboard completo con las 3 columnas.
 
     Args:
         strategy_mode: 'Larry Williams' o 'Wyckoff'
+        custom_ticker: Ticker personalizado ingresado por el usuario
+        simulation_mode: Si True, usa datos sintéticos
+        api_key: Alpha Vantage API Key para datos reales
     """
     # Inicializar símbolo seleccionado
     if 'selected_symbol' not in st.session_state:
@@ -459,7 +509,7 @@ def render_dashboard(strategy_mode: str):
         render_watchlist()
 
     with col2:
-        render_strategy_card(strategy_mode)
+        render_strategy_card(strategy_mode, custom_ticker, simulation_mode, api_key)
 
     with col3:
         render_news()

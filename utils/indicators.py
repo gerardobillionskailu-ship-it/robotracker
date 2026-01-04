@@ -297,6 +297,155 @@ def get_support_resistance(df: pd.DataFrame, window: int = 20) -> Tuple[float, f
     return support, resistance
 
 
+def fetch_stock_data(symbol: str, period: str = "2y") -> pd.DataFrame:
+    """
+    Descarga datos de acciones usando yfinance con headers robustos.
+    Implementa retry automático con periodos decrecientes.
+
+    Args:
+        symbol: Símbolo del ticker (ej: 'CVX', 'SLB')
+        period: Periodo de datos ('1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max')
+
+    Returns:
+        DataFrame con datos OHLCV o DataFrame vacío si falla
+    """
+    import yfinance as yf
+    import requests_cache
+
+    # Configurar caché para evitar hits repetidos a Yahoo Finance
+    session = requests_cache.CachedSession('yfinance.cache', expire_after=3600)
+    session.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+
+    # Intentar con diferentes periodos si falla
+    periods_to_try = [period, "1y", "6mo", "3mo"]
+
+    for attempt_period in periods_to_try:
+        try:
+            ticker = yf.Ticker(symbol, session=session)
+            df = ticker.history(period=attempt_period)
+
+            if not df.empty and len(df) >= 20:
+                # Asegurar que tenemos las columnas necesarias
+                required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                if all(col in df.columns for col in required_columns):
+                    # Rellenar valores nulos si existen
+                    df = df.ffill().bfill()
+                    return df
+        except Exception:
+            continue
+
+    # Si falla con el símbolo base, intentar variantes mexicanas y brasileñas
+    for variant in [f"{symbol}.MX", f"{symbol}.SA"]:
+        try:
+            ticker = yf.Ticker(variant, session=session)
+            df = ticker.history(period="1y")
+
+            if not df.empty and len(df) >= 20:
+                df = df.ffill().bfill()
+                return df
+        except Exception:
+            continue
+
+    # Si todo falla, retornar DataFrame vacío
+    return pd.DataFrame()
+
+
+def fetch_stock_data_alphavantage(symbol: str, api_key: str) -> pd.DataFrame:
+    """
+    Descarga datos de acciones usando Alpha Vantage API.
+    Alternativa a yfinance cuando hay bloqueos de IP.
+
+    Args:
+        symbol: Símbolo del ticker (ej: 'CVX', 'SLB')
+        api_key: Alpha Vantage API Key
+
+    Returns:
+        DataFrame con datos OHLCV o DataFrame vacío si falla
+    """
+    try:
+        from alpha_vantage.timeseries import TimeSeries
+
+        ts = TimeSeries(key=api_key, output_format='pandas')
+        data, meta_data = ts.get_daily(symbol=symbol, outputsize='full')
+
+        # Renombrar columnas para que coincidan con yfinance
+        df = data.rename(columns={
+            '1. open': 'Open',
+            '2. high': 'High',
+            '3. low': 'Low',
+            '4. close': 'Close',
+            '5. volume': 'Volume'
+        })
+
+        # Ordenar por fecha (más antiguo primero)
+        df = df.sort_index()
+
+        # Tomar últimos 500 días (~2 años de trading)
+        df = df.tail(500)
+
+        # Asegurar tipos numéricos
+        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # Rellenar valores nulos
+        df = df.ffill().bfill()
+
+        return df
+
+    except Exception as e:
+        # Retornar DataFrame vacío si falla
+        return pd.DataFrame()
+
+
+def generate_synthetic_data(symbol: str, days: int = 500) -> pd.DataFrame:
+    """
+    Genera datos sintéticos alcistas para demostración.
+    Simula un rally por cambio de régimen en Venezuela.
+
+    Args:
+        symbol: Símbolo del ticker (para naming)
+        days: Cantidad de días de datos
+
+    Returns:
+        DataFrame con datos OHLCV sintéticos alcistas
+    """
+    from datetime import datetime, timedelta
+
+    # Generar fechas
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    dates = pd.date_range(start=start_date, end=end_date, freq='D')
+
+    # Precio base según símbolo
+    base_prices = {
+        'CVX': 150,
+        'SLB': 50,
+        'HAL': 35,
+        'XLE': 80
+    }
+    base_price = base_prices.get(symbol, 100)
+
+    # Generar tendencia alcista con volatilidad
+    np.random.seed(42)
+    trend = np.linspace(base_price, base_price * 1.5, len(dates))
+    volatility = np.random.normal(0, base_price * 0.02, len(dates))
+    close_prices = trend + volatility
+
+    # Generar OHLC basado en Close
+    df = pd.DataFrame(index=dates)
+    df['Close'] = close_prices
+    df['Open'] = df['Close'].shift(1).fillna(df['Close'].iloc[0])
+    df['High'] = df[['Open', 'Close']].max(axis=1) * (1 + np.random.uniform(0, 0.02, len(df)))
+    df['Low'] = df[['Open', 'Close']].min(axis=1) * (1 - np.random.uniform(0, 0.02, len(df)))
+    df['Volume'] = np.random.randint(1000000, 5000000, len(df))
+
+    # Asegurar tipos numéricos
+    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    return df
+
+
 # PRÓXIMAS FUNCIONES A IMPLEMENTAR:
 # - calculate_rsi(): Índice de Fuerza Relativa
 # - calculate_macd(): MACD y señal

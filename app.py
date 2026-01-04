@@ -78,6 +78,48 @@ def render_sidebar():
 
         st.markdown("---")
 
+        # Ticker personalizado
+        st.subheader("🔧 Configuración Avanzada")
+
+        custom_ticker = st.text_input(
+            "Ticker Manual (opcional)",
+            placeholder="Ej: XOM, CVX.MX, AAPL",
+            help="Ingresa un ticker personalizado para analizar. Deja vacío para usar watchlist."
+        )
+
+        # Alpha Vantage API Key
+        st.subheader("🔑 API de Datos Reales")
+        api_key = st.text_input(
+            "Alpha Vantage API Key",
+            type="password",
+            placeholder="Pega tu API Key aquí",
+            help="""
+            Obtén tu API Key GRATIS en: https://www.alphavantage.co/support/#api-key
+
+            Necesaria para datos reales. Sin ella, se usará Modo Simulación.
+            """
+        )
+
+        if api_key:
+            st.success("✅ API Key configurada - Usando datos reales de Alpha Vantage")
+        else:
+            st.info("💡 Sin API Key - Obtén una gratis en alphavantage.co")
+
+        # Modo Simulación (automático si no hay API key)
+        simulation_mode = st.toggle(
+            "🎮 Modo Simulación",
+            value=(not bool(api_key)),  # Activado si no hay API key
+            help="""
+            Genera datos sintéticos alcistas simulando un rally por cambio de régimen en Venezuela.
+            Se activa automáticamente si no hay API Key.
+            """
+        )
+
+        if simulation_mode:
+            st.warning("⚡ Modo Simulación Activo: Usando datos sintéticos")
+
+        st.markdown("---")
+
         # Información de cuenta
         st.subheader("💼 Tipo de Cuenta")
         st.info("**Cuenta Cash** (por defecto)")
@@ -136,7 +178,7 @@ def render_sidebar():
         # Footer
         st.caption(f"© 2024 TradeOlympo | {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
-    return strategy_mode
+    return strategy_mode, custom_ticker, simulation_mode, api_key
 
 
 # ========== FUNCIÓN PRINCIPAL ==========
@@ -152,22 +194,24 @@ def main():
         st.markdown("*Estrategias inteligentes para cuentas Cash*")
 
         # Renderizar sidebar y obtener configuración
-        strategy_mode = render_sidebar()
+        strategy_mode, custom_ticker, simulation_mode, api_key = render_sidebar()
 
         # Mensaje de bienvenida (solo primera vez)
         if 'first_load' not in st.session_state:
             st.session_state['first_load'] = True
+            mode_text = "🎮 Simulación" if simulation_mode else strategy_mode
+            ticker_text = f" analizando **{custom_ticker}**" if custom_ticker else ""
             st.info(f"""
             ¡Bienvenido a TradeOlympo!
 
-            Has seleccionado el modo **{strategy_mode}**.
+            Modo: **{mode_text}**{ticker_text}
             Selecciona un símbolo en el Watchlist para comenzar el análisis.
             """)
 
         st.markdown("---")
 
         # Renderizar dashboard principal
-        render_dashboard(strategy_mode)
+        render_dashboard(strategy_mode, custom_ticker, simulation_mode, api_key)
 
     except Exception as e:
         # Manejo elegante de errores
