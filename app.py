@@ -140,7 +140,7 @@ def render_sidebar():
 
             **Stack Tecnológico:**
             - Streamlit
-            - yfinance
+            - Alpha Vantage (API de datos reales)
             - Plotly
             - Pandas & NumPy
             """)
@@ -225,36 +225,7 @@ def main():
             st.rerun()
 
 
-# ========== MANEJO DE ERRORES DE DATOS ==========
-
-def check_data_availability():
-    """
-    Verifica que se puedan obtener datos de yfinance.
-    Útil para debugging y validación inicial.
-    """
-    import yfinance as yf
-
-    try:
-        test_ticker = yf.Ticker("CVX")
-        test_data = test_ticker.history(period="1d")
-
-        if test_data.empty:
-            return False, "No se pudieron obtener datos de prueba"
-
-        return True, "Conexión exitosa"
-
-    except Exception as e:
-        return False, f"Error de conexión: {str(e)}"
-
-
 # ========== PUNTO DE ENTRADA ==========
 
 if __name__ == "__main__":
-    # Validación inicial (opcional, puede comentarse en producción)
-    # success, message = check_data_availability()
-    # if not success:
-    #     st.error(f"Error de inicialización: {message}")
-    #     st.stop()
-
-    # Ejecutar aplicación
     main()
