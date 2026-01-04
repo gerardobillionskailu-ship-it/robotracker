@@ -9,7 +9,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
-from utils.indicators import TechnicalIndicators, get_support_resistance, fetch_stock_data
+from utils.indicators import TechnicalIndicators, get_support_resistance, fetch_stock_data, generate_synthetic_data
 
 
 # ========== CONFIGURACIÓN ==========
@@ -124,21 +124,33 @@ def render_watchlist():
 
 # ========== COLUMNA 2: TARJETA DE ESTRATEGIA DINÁMICA ==========
 
-def render_strategy_card(strategy_mode: str):
+def render_strategy_card(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False):
     """
     Renderiza la tarjeta de estrategia que cambia dinámicamente
     según el indicador seleccionado.
 
     Args:
         strategy_mode: 'Larry Williams' o 'Wyckoff'
+        custom_ticker: Ticker personalizado ingresado por el usuario
+        simulation_mode: Si True, usa datos sintéticos en lugar de yfinance
     """
     st.header("🎯 Estrategia de Trading")
 
-    selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
+    # Usar ticker personalizado si está presente, sino usar del watchlist
+    if custom_ticker and custom_ticker.strip():
+        selected_symbol = custom_ticker.strip().upper()
+        st.info(f"📊 Analizando ticker personalizado: **{selected_symbol}**")
+    else:
+        selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
 
     try:
-        # Obtener datos históricos usando función robusta con User-Agent
-        df = fetch_stock_data(selected_symbol, period="2y")
+        # Obtener datos: sintéticos o reales
+        if simulation_mode:
+            st.success("🎮 Usando datos sintéticos - Rally por cambio de régimen en Venezuela")
+            df = generate_synthetic_data(selected_symbol, days=500)
+        else:
+            # Obtener datos históricos usando función robusta con User-Agent
+            df = fetch_stock_data(selected_symbol, period="2y")
 
         # Validar que el DataFrame no esté vacío y tenga suficientes datos
         if df is None or df.empty or len(df) < 20:
@@ -237,6 +249,29 @@ def render_larry_williams_card(symbol: str, signal_data: dict, df: pd.DataFrame)
     st.subheader("💡 Estrategia Recomendada (Cuenta Cash)")
     st.info(signal_data['suggested_strategy'])
 
+    # Cálculo dinámico del Strike para Long Call
+    if signal == 'BUY':
+        current_price = df['Close'].iloc[-1]
+        # Strike Out-of-the-Money (OTM): 5-10% arriba del precio actual
+        strike_5pct = current_price * 1.05
+        strike_10pct = current_price * 1.10
+
+        st.subheader("📞 Strikes Recomendados para Long Call")
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric("Precio Actual", f"${current_price:.2f}")
+
+        with col2:
+            st.metric("Strike +5% OTM", f"${strike_5pct:.2f}",
+                     help="Más conservador, mayor probabilidad de ganancia")
+
+        with col3:
+            st.metric("Strike +10% OTM", f"${strike_10pct:.2f}",
+                     help="Más agresivo, mayor potencial de retorno")
+
+        st.caption("💡 Strikes OTM (Out-of-the-Money) ofrecen mejor relación riesgo/beneficio para cuentas Cash")
+
     # Razones
     st.subheader("📋 Análisis")
     for reason in signal_data['reasons']:
@@ -295,6 +330,29 @@ def render_wyckoff_card(symbol: str, signal_data: dict, df: pd.DataFrame):
     # Estrategia recomendada
     st.subheader("💡 Estrategia Recomendada (Cuenta Cash)")
     st.info(signal_data['suggested_strategy'])
+
+    # Cálculo dinámico del Strike para Long Call
+    if signal == 'BUY':
+        current_price = df['Close'].iloc[-1]
+        # Strike Out-of-the-Money (OTM): 5-10% arriba del precio actual
+        strike_5pct = current_price * 1.05
+        strike_10pct = current_price * 1.10
+
+        st.subheader("📞 Strikes Recomendados para Long Call")
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric("Precio Actual", f"${current_price:.2f}")
+
+        with col2:
+            st.metric("Strike +5% OTM", f"${strike_5pct:.2f}",
+                     help="Más conservador, mayor probabilidad de ganancia")
+
+        with col3:
+            st.metric("Strike +10% OTM", f"${strike_10pct:.2f}",
+                     help="Más agresivo, mayor potencial de retorno")
+
+        st.caption("💡 Strikes OTM (Out-of-the-Money) ofrecen mejor relación riesgo/beneficio para cuentas Cash")
 
     # Razones
     st.subheader("📋 Análisis Wyckoff")
@@ -582,12 +640,14 @@ def render_news():
 
 # ========== FUNCIÓN PRINCIPAL DEL DASHBOARD ==========
 
-def render_dashboard(strategy_mode: str):
+def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False):
     """
     Renderiza el dashboard completo con las 3 columnas.
 
     Args:
         strategy_mode: 'Larry Williams' o 'Wyckoff'
+        custom_ticker: Ticker personalizado ingresado por el usuario
+        simulation_mode: Si True, usa datos sintéticos
     """
     # Inicializar símbolo seleccionado
     if 'selected_symbol' not in st.session_state:
@@ -600,7 +660,7 @@ def render_dashboard(strategy_mode: str):
         render_watchlist()
 
     with col2:
-        render_strategy_card(strategy_mode)
+        render_strategy_card(strategy_mode, custom_ticker, simulation_mode)
 
     with col3:
         render_news()
