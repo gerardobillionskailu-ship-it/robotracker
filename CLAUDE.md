@@ -17,12 +17,22 @@ TradeOlympo is a financial analysis application built with Streamlit that monito
 
 ### Setup
 ```bash
+# Create virtual environment (recommended)
+python -m venv venv
+
+# Activate virtual environment
+# On Windows:
+venv\Scripts\activate
+# On Mac/Linux:
+source venv/bin/activate
+
 # Install dependencies
 pip install -r requirements.txt
-
-# Run the application
-streamlit run app.py
 ```
+
+### Requirements
+- Python 3.8 or higher
+- Internet connection (for fetching market data via yfinance)
 
 ### Running the App
 ```bash
@@ -151,3 +161,25 @@ The app uses "graceful degradation":
 4. Update `render_strategy_card()` to handle new mode
 5. Update `render_chart()` to add strategy-specific visualizations
 6. Add new option to sidebar radio button in `app.py`
+
+## Troubleshooting
+
+### Common Issues
+
+**"No module named 'streamlit'"**
+- Ensure virtual environment is activated
+- Run: `pip install -r requirements.txt`
+
+**"Unable to fetch data for symbol"**
+- Check internet connection
+- yfinance may have rate limits; wait a few seconds and retry
+- Some symbols may not have historical data available
+
+**Chart not rendering**
+- Check browser console for JavaScript errors
+- Try clearing browser cache
+- Ensure Plotly is installed: `pip install plotly`
+
+**Session state errors**
+- Streamlit's session state is reset on page refresh
+- Selected symbol defaults to first in watchlist (CVX)
