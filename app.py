@@ -102,18 +102,28 @@ def render_sidebar():
 
         st.markdown("---")
 
+        # Watchlist Editable
+        st.subheader("📊 Watchlist Personalizada")
+        watchlist_symbols = st.multiselect(
+            "Edita tus símbolos:",
+            options=["CVX", "SLB", "HAL", "XLE", "AAPL", "MSFT", "GOOGL", "TSLA", "SPY", "QQQ"],
+            default=["CVX", "SLB", "HAL", "XLE"],
+            help="Selecciona los tickers que quieres monitorear"
+        )
+
+        # Modo Geopolítico (Venezuela)
+        geopolitical_mode = st.toggle(
+            "🌎 Modo Geopolítico (Venezuela)",
+            value=True,
+            help="Muestra alertas sobre Maduro y análisis petrolero venezolano"
+        )
+
+        st.markdown("---")
+
         # Información de cuenta
         st.subheader("💼 Tipo de Cuenta")
         st.info("**Cuenta Cash** (por defecto)")
         st.caption("Solo se sugerirán estrategias de compra directa (Long Calls o Acciones).")
-
-        st.markdown("---")
-
-        # Watchlist info
-        st.subheader("📊 Símbolos Monitoreados")
-        symbols = ["CVX", "SLB", "HAL", "XLE"]
-        for symbol in symbols:
-            st.markdown(f"• **{symbol}**")
 
         st.markdown("---")
 
@@ -160,7 +170,7 @@ def render_sidebar():
         # Footer
         st.caption(f"© 2024 TradeOlympo | {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
-    return strategy_mode, custom_ticker, simulation_mode
+    return strategy_mode, custom_ticker, simulation_mode, watchlist_symbols, geopolitical_mode
 
 
 # ========== FUNCIÓN PRINCIPAL ==========
@@ -176,7 +186,7 @@ def main():
         st.markdown("*Estrategias inteligentes para cuentas Cash*")
 
         # Renderizar sidebar y obtener configuración
-        strategy_mode, custom_ticker, simulation_mode = render_sidebar()
+        strategy_mode, custom_ticker, simulation_mode, watchlist_symbols, geopolitical_mode = render_sidebar()
 
         # Mensaje de bienvenida (solo primera vez)
         if 'first_load' not in st.session_state:
@@ -193,7 +203,7 @@ def main():
         st.markdown("---")
 
         # Renderizar dashboard principal
-        render_dashboard(strategy_mode, custom_ticker, simulation_mode)
+        render_dashboard(strategy_mode, custom_ticker, simulation_mode, watchlist_symbols, geopolitical_mode)
 
     except Exception as e:
         # Manejo elegante de errores
