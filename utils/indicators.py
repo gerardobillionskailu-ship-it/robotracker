@@ -87,27 +87,33 @@ def generate_synthetic_data(symbol: str, days: int = 500) -> pd.DataFrame:
     return df
 
 
-def fetch_stock_data(symbol: str, period: str = "2y") -> pd.DataFrame:
+def fetch_stock_data(symbol: str, period: str = "2y", _retry_count: int = 0) -> pd.DataFrame:
     """
     Descarga datos de acciones de forma robusta usando yfinance.
 
-    Implementa User-Agent y manejo de errores para evitar JSON parsing errors.
+    Implementa User-Agent, requests-cache y fallback automático para evitar bloqueos.
 
     Args:
-        symbol: Símbolo del ticker (ej: 'CVX', 'SLB')
+        symbol: Símbolo del ticker (ej: 'CVX', 'SLB', 'AAPL')
         period: Período de datos ('1y', '2y', '6mo', etc.)
+        _retry_count: Contador interno de reintentos (no usar manualmente)
 
     Returns:
         DataFrame con datos OHLCV o DataFrame vacío si hay error
     """
     try:
-        # Crear objeto Ticker con User-Agent de navegador real
-        ticker = yf.Ticker(symbol)
+        # Configurar requests-cache para evitar bloqueos de IP
+        import requests
+        import requests_cache
+
+        # Crear sesión con caché (válida por 1 hora)
+        session = requests_cache.CachedSession(
+            'yfinance_cache',
+            backend='memory',
+            expire_after=3600  # 1 hora
+        )
 
         # Configurar headers para evitar bloqueos (User-Agent de Chrome)
-        # yfinance usa requests internamente, así que configuramos la sesión
-        import requests
-        session = requests.Session()
         session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -115,22 +121,37 @@ def fetch_stock_data(symbol: str, period: str = "2y") -> pd.DataFrame:
             'Accept-Encoding': 'gzip, deflate',
             'DNT': '1',
             'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
+            'Upgrade-Insecure-Requests': '1',
+            'Referer': 'https://finance.yahoo.com/'
         })
-        ticker.session = session
 
-        # Descargar datos históricos usando el objeto Ticker
+        # Crear objeto Ticker con sesión cacheada
+        ticker = yf.Ticker(symbol, session=session)
+
+        # Descargar datos históricos
         df = ticker.history(period=period)
 
         # Validar que el DataFrame no esté vacío
         if df.empty:
+            # Intentar fallback a variantes internacionales si es el primer intento
+            if _retry_count == 0:
+                # Intentar con .MX (México)
+                df_mx = fetch_stock_data(symbol + ".MX", period, _retry_count=1)
+                if not df_mx.empty:
+                    return df_mx
+
+                # Intentar con .SA (Brasil)
+                df_sa = fetch_stock_data(symbol + ".SA", period, _retry_count=1)
+                if not df_sa.empty:
+                    return df_sa
+
             # Intentar con período más corto
             if period == "2y":
-                return fetch_stock_data(symbol, "1y")
+                return fetch_stock_data(symbol, "1y", _retry_count)
             elif period == "1y":
-                return fetch_stock_data(symbol, "6mo")
+                return fetch_stock_data(symbol, "6mo", _retry_count)
             elif period == "6mo":
-                return fetch_stock_data(symbol, "3mo")
+                return fetch_stock_data(symbol, "3mo", _retry_count)
             else:
                 return pd.DataFrame()
 
