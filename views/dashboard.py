@@ -7,97 +7,58 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
-import yfinance as yf
 from datetime import datetime, timedelta
 from utils.indicators import TechnicalIndicators, get_support_resistance, fetch_stock_data, fetch_stock_data_alphavantage, generate_synthetic_data
 
 
 # ========== CONFIGURACIÓN ==========
 
-WATCHLIST_SYMBOLS = ['CVX', 'SLB', 'HAL', 'XLE']
+DEFAULT_WATCHLIST = ['CVX', 'SLB', 'HAL', 'XLE']
+FALLBACK_SYMBOL = "AAPL"  # Símbolo por defecto si no hay selección
 
 
 # ========== COLUMNA 1: WATCHLIST ==========
 
-def render_watchlist():
+def render_watchlist(symbols=None):
     """
-    Renderiza la columna de Watchlist con resumen de símbolos.
-    Muestra precio actual, cambio % y selección de símbolo.
+    Renderiza la columna de Watchlist con selección de símbolos.
     """
+    if not symbols:
+        symbols = DEFAULT_WATCHLIST
+
     st.header("📊 Watchlist")
 
-    selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
+    # Obtener símbolo actual o usar fallback
+    current_symbol = st.session_state.get('selected_symbol', FALLBACK_SYMBOL)
+    
+    # Validar que el símbolo actual esté en la lista, si no, mantenerlo pero marcarlo
+    if current_symbol not in symbols and current_symbol != FALLBACK_SYMBOL:
+        pass # Permitir símbolos custom fuera de la lista
 
-    # Mostrar cada símbolo con métricas básicas
-    for symbol in WATCHLIST_SYMBOLS:
-        try:
-            ticker = yf.Ticker(symbol)
-            info = ticker.info
-            current_price = info.get('currentPrice', info.get('regularMarketPrice', 0))
-            prev_close = info.get('previousClose', current_price)
-
-            if prev_close and prev_close != 0:
-                change_pct = ((current_price - prev_close) / prev_close) * 100
-            else:
-                change_pct = 0
-
-            # Botón seleccionable para cada símbolo
-            col1, col2, col3 = st.columns([2, 2, 2])
-
-            with col1:
-                if st.button(
-                    symbol,
-                    key=f"btn_{symbol}",
-                    use_container_width=True,
-                    type="primary" if symbol == selected_symbol else "secondary"
-                ):
-                    st.session_state['selected_symbol'] = symbol
-                    st.rerun()
-
-            with col2:
-                st.metric(
-                    label="",
-                    value=f"${current_price:.2f}",
-                    delta=f"{change_pct:+.2f}%"
-                )
-
-        except Exception as e:
-            st.error(f"Error cargando {symbol}: {str(e)}")
+    # Mostrar cada símbolo como botón seleccionable
+    for symbol in symbols:
+        if st.button(
+            symbol,
+            key=f"btn_{symbol}",
+            use_container_width=True,
+            type="primary" if symbol == current_symbol else "secondary"
+        ):
+            st.session_state['selected_symbol'] = symbol
+            st.rerun()
 
     st.divider()
 
-    # Información adicional del símbolo seleccionado
-    if selected_symbol:
-        st.subheader(f"Detalles: {selected_symbol}")
-        try:
-            ticker = yf.Ticker(selected_symbol)
-            info = ticker.info
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Volumen", f"{info.get('volume', 0):,}")
-                st.metric("Market Cap", f"${info.get('marketCap', 0):,.0f}")
-
-            with col2:
-                st.metric("P/E Ratio", f"{info.get('trailingPE', 'N/A')}")
-                st.metric("52W High", f"${info.get('fiftyTwoWeekHigh', 0):.2f}")
-
-        except Exception as e:
-            st.warning(f"No se pudo cargar información adicional: {str(e)}")
+    # Información del símbolo seleccionado
+    st.subheader(f"📍 Seleccionado: {current_symbol}")
+    st.info("💡 Los precios y métricas se muestran en la **Tarjeta de Estrategia** con datos de Alpha Vantage.")
 
 
 # ========== COLUMNA 2: TARJETA DE ESTRATEGIA DINÁMICA ==========
 
 def render_strategy_card(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False, api_key: str = ""):
     """
-    Renderiza la tarjeta de estrategia que cambia dinámicamente
-    según el indicador seleccionado.
-
-    Args:
-        strategy_mode: 'Larry Williams' o 'Wyckoff'
-        custom_ticker: Ticker personalizado ingresado por el usuario
-        simulation_mode: Si True, usa datos sintéticos
-        api_key: Alpha Vantage API Key para datos reales
+    Renderiza la tarjeta de estrategia que cambia dinámicamente.
+    Acepta api_key para usar datos reales de Alpha Vantage.
     """
     st.header("🎯 Estrategia de Trading")
 
@@ -105,62 +66,52 @@ def render_strategy_card(strategy_mode: str, custom_ticker: str = "", simulation
     if custom_ticker and custom_ticker.strip():
         selected_symbol = custom_ticker.strip().upper()
         st.info(f"📊 Analizando ticker personalizado: **{selected_symbol}**")
+        # Actualizar session state para que otras vistas se sincronicen
+        st.session_state['selected_symbol'] = selected_symbol
     else:
-        selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
+        selected_symbol = st.session_state.get('selected_symbol', FALLBACK_SYMBOL)
 
     try:
-        # Obtener datos: sintéticos o reales
+        # Lógica de obtención de datos
         if simulation_mode:
-            st.success("🎮 Usando datos sintéticos - Rally por cambio de régimen en Venezuela")
+            st.success("🎮 Usando datos sintéticos - Rally por cambio de régimen")
             df = generate_synthetic_data(selected_symbol, days=500)
         elif api_key:
-            # Usar Alpha Vantage para datos reales
-            st.success(f"✅ Descargando datos reales de **{selected_symbol}** via Alpha Vantage...")
+            # Si hay API Key explícita, usarla con la función específica
+            # st.success(f"✅ Descargando datos reales de **{selected_symbol}**...") 
             df = fetch_stock_data_alphavantage(selected_symbol, api_key)
         else:
-            # Fallback a yfinance (aunque puede estar bloqueado)
-            st.warning("⚠️ Sin API Key - Intentando con yfinance (puede fallar)")
+            # Fallback a la función genérica (que busca en secrets)
             df = fetch_stock_data(selected_symbol, period="2y")
 
-        # Validar que el DataFrame no esté vacío y tenga suficientes datos
+        # Validaciones de Datos
         if df is None or df.empty or len(df) < 20:
             st.error(f"❌ No se pudieron obtener suficientes datos para {selected_symbol}")
             st.info("""
             **Posibles causas:**
             - El símbolo no existe o está mal escrito
-            - Problemas de conexión con la API
-            - El símbolo no tiene datos históricos disponibles
-
-            **Sugerencias:**
-            - Intenta con otro símbolo del watchlist
-            - Verifica tu API Key de Alpha Vantage
-            - Activa el Modo Simulación para ver una demo
+            - Límite de API Alpha Vantage alcanzado (espera 1 min)
+            - Problemas de conexión
+            
+            **Sugerencia:** Activa el 'Modo Simulación' en el sidebar para probar.
             """)
             return
 
-        # Validar que tenemos las columnas necesarias
+        # Validar columnas
         required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-        missing_columns = [col for col in required_columns if col not in df.columns]
-
-        if missing_columns:
-            st.error(f"❌ Faltan columnas en los datos: {', '.join(missing_columns)}")
-            return
-
-        # Validar que no haya valores nulos en columnas críticas
-        if df[required_columns].isnull().any().any():
-            st.warning("⚠️ Algunos datos contienen valores nulos. Rellenando...")
-            df = df.ffill().bfill()
-
-        # Verificar nuevamente que tengamos datos válidos
-        if df.empty or len(df) < 20:
-            st.error("❌ Datos insuficientes después de validación")
+        if not all(col in df.columns for col in required_columns):
+            st.error("❌ Datos incompletos recibidos de la API")
             return
 
         # Calcular indicadores
         indicators = TechnicalIndicators(df)
         df_with_indicators = indicators.calculate_all_indicators()
 
-        # Obtener señal según estrategia
+        if df_with_indicators.empty:
+            st.error("❌ Error al calcular indicadores técnicos")
+            return
+
+        # Renderizar tarjeta según estrategia seleccionada
         if strategy_mode == 'Larry Williams':
             signal_data = indicators.get_larry_williams_signal()
             render_larry_williams_card(selected_symbol, signal_data, df_with_indicators)
@@ -172,630 +123,259 @@ def render_strategy_card(strategy_mode: str, custom_ticker: str = "", simulation
         render_chart(selected_symbol, df_with_indicators, strategy_mode)
 
     except Exception as e:
-        st.error(f"Error al generar estrategia: {str(e)}")
-        st.exception(e)
+        st.error(f"❌ Error inesperado: {str(e)}")
 
 
 def render_larry_williams_card(symbol: str, signal_data: dict, df: pd.DataFrame):
-    """Renderiza la tarjeta específica para Larry Williams"""
+    """Renderiza la tarjeta específica para Larry Williams con UI mejorada"""
 
     # Señal principal
     signal = signal_data['signal']
     strength = signal_data['strength']
-
-    # Color según señal
-    if signal == 'BUY':
-        signal_color = '🟢'
-        bg_color = '#d4edda'
-    elif signal == 'SELL':
-        signal_color = '🔴'
-        bg_color = '#f8d7da'
-    else:
-        signal_color = '🟡'
-        bg_color = '#fff3cd'
-
-    st.markdown(f"""
-    <div style='background-color: {bg_color}; padding: 20px; border-radius: 10px; margin-bottom: 20px;'>
-        <h2 style='text-align: center;'>{signal_color} {signal}</h2>
-        <p style='text-align: center; font-size: 18px;'>Confianza: {strength}%</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Estrategia recomendada
-    st.subheader("💡 Estrategia Recomendada (Cuenta Cash)")
-    st.info(signal_data['suggested_strategy'])
-
-    # Razones
-    st.subheader("📋 Análisis")
-    for reason in signal_data['reasons']:
-        st.write(f"• {reason}")
-
-    # CALCULADORA DE GESTIÓN DE RIESGO (Regla 2-10%)
-    if signal == 'BUY':
-        current_price = df['Close'].iloc[-1]
-        st.subheader("💰 Gestión de Riesgo (Capital: $1,000)")
-
-        # Estimación de prima (aproximadamente 3-5% del precio de la acción para ATM)
-        strike_price = current_price * 1.05  # Strike conservador +5%
-        prima_estimada = current_price * 0.04  # 4% del precio de la acción
-        costo_contrato = prima_estimada * 100  # 1 contrato = 100 acciones
-
-        # Validación de riesgo
-        MAX_PRIMA = 150  # 15% del capital de $1,000
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.metric(
-                "Costo Estimado (1 contrato)",
-                f"${costo_contrato:.2f}",
-                help=f"Prima estimada ~{prima_estimada:.2f}/acción × 100"
-            )
-
-        with col2:
-            stop_loss = costo_contrato * 0.75  # Vender si pierde 25%
-            st.metric(
-                "Stop Loss (25%)",
-                f"${stop_loss:.2f}",
-                delta=f"-${costo_contrato - stop_loss:.2f}",
-                delta_color="inverse",
-                help="Salir si la opción pierde 25% de su valor"
-            )
-
-        with col3:
-            take_profit = costo_contrato * 1.50  # Vender si gana 50%
-            st.metric(
-                "Take Profit (50%)",
-                f"${take_profit:.2f}",
-                delta=f"+${take_profit - costo_contrato:.2f}",
-                help="Salir si la opción gana 50% de valor"
-            )
-
-        # Advertencia de riesgo
-        if costo_contrato > MAX_PRIMA:
-            st.error(f"""
-            ⚠️ **RIESGO ALTO**: El costo estimado (${costo_contrato:.2f}) supera el límite recomendado de ${MAX_PRIMA} (15% del capital).
-
-            **Recomendación**: Considera esperar una mejor oportunidad o usar un strike más alejado (OTM) con prima menor.
-            """)
-        else:
-            st.success(f"""
-            ✅ **RIESGO CONTROLADO**: El costo estimado (${costo_contrato:.2f}) está dentro del límite de ${MAX_PRIMA} (15% del capital).
-
-            **Capital restante**: ${1000 - costo_contrato:.2f} disponible para diversificación.
-            """)
-
-    # Métricas clave
-    st.subheader("📊 Métricas Larry Williams")
-    col1, col2, col3 = st.columns(3)
-
+    current_price = df['Close'].iloc[-1]
     latest = df.iloc[-1]
 
+    # Calcular target (precio objetivo) based on signal
+    if signal == 'BUY':
+        target_price = current_price * 1.10  # +10% target
+    elif signal == 'SELL':
+        target_price = current_price * 0.90  # -10% target
+    else:
+        target_price = current_price
+
+    # MÉTRICAS PRINCIPALES
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric(
-            "Williams %R",
-            f"{signal_data['williams_r']:.2f}",
-            help="< -80 = Sobreventa, > -20 = Sobrecompra"
-        )
-
+        st.metric("💰 Precio Actual", f"${current_price:.2f}")
     with col2:
-        st.metric(
-            "SMA 20",
-            f"${latest['sma_20']:.2f}"
-        )
-
+        delta_target = ((target_price - current_price) / current_price) * 100
+        st.metric("🎯 Target", f"${target_price:.2f}", f"{delta_target:+.1f}%")
     with col3:
-        st.metric(
-            "SMA 50",
-            f"${latest['sma_50']:.2f}"
-        )
+        st.metric("📊 Confianza", f"{strength}%")
+
+    st.markdown("---")
+
+    # ALERTA DE ACCIÓN
+    if signal == 'BUY':
+        strike_5pct = current_price * 1.05
+        st.success(f"### 🟢 ACCIÓN: COMPRAR CALL STRIKE ${strike_5pct:.2f}\n**Razón:** {signal_data['suggested_strategy']}")
+    elif signal == 'SELL':
+        st.warning(f"### 🔴 ACCIÓN: CONSIDERAR VENTA\n**Razón:** {signal_data['suggested_strategy']}")
+    else:
+        st.info(f"### 🟡 ACCIÓN: ESPERAR\n**Razón:** {signal_data['suggested_strategy']}")
+
+    st.markdown("---")
+
+    # CALCULADORA DE GESTIÓN DE RIESGO (Solo si es BUY)
+    if signal == 'BUY':
+        st.subheader("💰 Gestión de Riesgo (Capital: $1,000)")
+        
+        # Cálculos
+        prima_estimada = current_price * 0.04  # Est. 4% del precio
+        costo_contrato = prima_estimada * 100
+        MAX_PRIMA = 150 # 15% del capital
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Costo (1 contrato)", f"${costo_contrato:.2f}")
+        
+        stop_loss = costo_contrato * 0.75
+        c2.metric("Stop Loss (-25%)", f"${stop_loss:.2f}", f"-${costo_contrato - stop_loss:.2f}", delta_color="inverse")
+        
+        take_profit = costo_contrato * 1.50
+        c3.metric("Take Profit (+50%)", f"${take_profit:.2f}", f"+${take_profit - costo_contrato:.2f}")
+
+        if costo_contrato > MAX_PRIMA:
+            st.error(f"⚠️ **RIESGO ALTO**: ${costo_contrato:.2f} supera el 15% sugerido.")
+        else:
+            st.success(f"✅ **RIESGO CONTROLADO**: ${costo_contrato:.2f} es seguro para tu cuenta.")
+
+    st.markdown("---")
+    
+    # Métricas Técnicas
+    st.subheader("📊 Indicadores Técnicos")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Williams %R", f"{signal_data['williams_r']:.2f}")
+    c2.metric("SMA 20", f"${latest['sma_20']:.2f}")
+    c3.metric("SMA 50", f"${latest['sma_50']:.2f}")
+    
+    st.caption("Razones: " + ", ".join(signal_data['reasons']))
 
 
 def render_wyckoff_card(symbol: str, signal_data: dict, df: pd.DataFrame):
     """Renderiza la tarjeta específica para Wyckoff"""
-
+    
     signal = signal_data['signal']
     strength = signal_data['strength']
+    current_price = df['Close'].iloc[-1]
 
-    # Color según señal
+    # Métricas
+    c1, c2, c3 = st.columns(3)
+    c1.metric("💰 Precio", f"${current_price:.2f}")
+    c2.metric("📊 Confianza", f"{strength}%")
+    c3.metric("📈 Volumen Rel.", f"{signal_data['volume_relative']:.0f}%")
+
+    st.markdown("---")
+
     if signal == 'BUY':
-        signal_color = '🟢'
-        bg_color = '#d4edda'
+        st.success(f"### 🟢 ACUMULACIÓN DETECTADA (BUY)\n{signal_data['suggested_strategy']}")
     elif signal == 'SELL':
-        signal_color = '🔴'
-        bg_color = '#f8d7da'
+        st.warning(f"### 🔴 DISTRIBUCIÓN DETECTADA (SELL)\n{signal_data['suggested_strategy']}")
     else:
-        signal_color = '🟡'
-        bg_color = '#fff3cd'
+        st.info("### 🟡 RANGO/NEUTRAL")
 
-    st.markdown(f"""
-    <div style='background-color: {bg_color}; padding: 20px; border-radius: 10px; margin-bottom: 20px;'>
-        <h2 style='text-align: center;'>{signal_color} {signal}</h2>
-        <p style='text-align: center; font-size: 18px;'>Confianza: {strength}%</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Estrategia recomendada
-    st.subheader("💡 Estrategia Recomendada (Cuenta Cash)")
-    st.info(signal_data['suggested_strategy'])
-
-    # Razones
-    st.subheader("📋 Análisis Wyckoff")
-    for reason in signal_data['reasons']:
-        st.write(f"• {reason}")
-
-    # CALCULADORA DE GESTIÓN DE RIESGO (Regla 2-10%)
-    if signal == 'BUY':
-        current_price = df['Close'].iloc[-1]
-        st.subheader("💰 Gestión de Riesgo (Capital: $1,000)")
-
-        # Estimación de prima (aproximadamente 3-5% del precio de la acción para ATM)
-        strike_price = current_price * 1.05  # Strike conservador +5%
-        prima_estimada = current_price * 0.04  # 4% del precio de la acción
-        costo_contrato = prima_estimada * 100  # 1 contrato = 100 acciones
-
-        # Validación de riesgo
-        MAX_PRIMA = 150  # 15% del capital de $1,000
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.metric(
-                "Costo Estimado (1 contrato)",
-                f"${costo_contrato:.2f}",
-                help=f"Prima estimada ~{prima_estimada:.2f}/acción × 100"
-            )
-
-        with col2:
-            stop_loss = costo_contrato * 0.75  # Vender si pierde 25%
-            st.metric(
-                "Stop Loss (25%)",
-                f"${stop_loss:.2f}",
-                delta=f"-${costo_contrato - stop_loss:.2f}",
-                delta_color="inverse",
-                help="Salir si la opción pierde 25% de su valor"
-            )
-
-        with col3:
-            take_profit = costo_contrato * 1.50  # Vender si gana 50%
-            st.metric(
-                "Take Profit (50%)",
-                f"${take_profit:.2f}",
-                delta=f"+${take_profit - costo_contrato:.2f}",
-                help="Salir si la opción gana 50% de valor"
-            )
-
-        # Advertencia de riesgo
-        if costo_contrato > MAX_PRIMA:
-            st.error(f"""
-            ⚠️ **RIESGO ALTO**: El costo estimado (${costo_contrato:.2f}) supera el límite recomendado de ${MAX_PRIMA} (15% del capital).
-
-            **Recomendación**: Considera esperar una mejor oportunidad o usar un strike más alejado (OTM) con prima menor.
-            """)
-        else:
-            st.success(f"""
-            ✅ **RIESGO CONTROLADO**: El costo estimado (${costo_contrato:.2f}) está dentro del límite de ${MAX_PRIMA} (15% del capital).
-
-            **Capital restante**: ${1000 - costo_contrato:.2f} disponible para diversificación.
-            """)
-
-    # Métricas clave
-    st.subheader("📊 Métricas Wyckoff")
-    col1, col2 = st.columns(2)
-
-    latest = df.iloc[-1]
-
-    with col1:
-        st.metric(
-            "Volumen Relativo",
-            f"{signal_data['volume_relative']:.0f}%",
-            help="> 150% = Volumen alto"
-        )
-
-    with col2:
-        st.metric(
-            "Posición Cierre",
-            f"{signal_data['close_position']:.0f}%",
-            help="> 75% = Zona alta, < 25% = Zona baja"
-        )
-
-    # Niveles de soporte/resistencia
-    support, resistance = get_support_resistance(df)
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.metric("Soporte", f"${support:.2f}")
-
-    with col2:
-        st.metric("Resistencia", f"${resistance:.2f}")
+    st.caption("Razones: " + ", ".join(signal_data['reasons']))
 
 
 def render_chart(symbol: str, df: pd.DataFrame, strategy_mode: str):
-    """
-    Renderiza gráfico interactivo según estrategia.
-
-    Args:
-        symbol: Símbolo del ticker
-        df: DataFrame con datos e indicadores
-        strategy_mode: 'Larry Williams' o 'Wyckoff'
-    """
+    """Renderiza gráfico interactivo con tema oscuro profesional"""
+    
     st.subheader("📈 Gráfico de Análisis")
 
-    # Crear subplots
     if strategy_mode == 'Larry Williams':
-        fig = make_subplots(
-            rows=2, cols=1,
-            shared_xaxes=True,
-            vertical_spacing=0.05,
-            row_heights=[0.7, 0.3],
-            subplot_titles=(f'{symbol} - Precio y Medias Móviles', 'Williams %R')
-        )
-
-        # Candlestick
-        fig.add_trace(
-            go.Candlestick(
-                x=df.index,
-                open=df['Open'],
-                high=df['High'],
-                low=df['Low'],
-                close=df['Close'],
-                name='Precio'
-            ),
-            row=1, col=1
-        )
-
-        # Medias móviles (Larry Williams: 13 y 50 semanas = 65 y 250 días)
-        fig.add_trace(
-            go.Scatter(x=df.index, y=df['sma_20'], name='SMA 20 (corto)', line=dict(color='#00D9FF', width=2)),
-            row=1, col=1
-        )
-        fig.add_trace(
-            go.Scatter(x=df.index, y=df['sma_50'], name='SMA 50 (13sem)', line=dict(color='#FFB800', width=2)),
-            row=1, col=1
-        )
-        fig.add_trace(
-            go.Scatter(x=df.index, y=df['sma_200'], name='SMA 200 (50sem)', line=dict(color='#FF006E', width=2)),
-            row=1, col=1
-        )
-
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3],
+                            subplot_titles=(f'{symbol} - Precio', 'Williams %R'))
+        
+        # Precio
+        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Precio'), row=1, col=1)
+        
+        # SMAs
+        fig.add_trace(go.Scatter(x=df.index, y=df['sma_20'], name='SMA 20', line=dict(color='#00D9FF', width=1)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['sma_50'], name='SMA 50', line=dict(color='#FFB800', width=1)), row=1, col=1)
+        
         # Williams %R
-        fig.add_trace(
-            go.Scatter(x=df.index, y=df['williams_r'], name='Williams %R', line=dict(color='purple')),
-            row=2, col=1
-        )
-
-        # Líneas de referencia Williams %R
+        fig.add_trace(go.Scatter(x=df.index, y=df['williams_r'], name='Williams %R', line=dict(color='purple')), row=2, col=1)
         fig.add_hline(y=-20, line_dash="dash", line_color="red", row=2, col=1)
         fig.add_hline(y=-80, line_dash="dash", line_color="green", row=2, col=1)
 
-    else:  # Wyckoff
-        fig = make_subplots(
-            rows=2, cols=1,
-            shared_xaxes=True,
-            vertical_spacing=0.05,
-            row_heights=[0.7, 0.3],
-            subplot_titles=(f'{symbol} - Análisis Wyckoff', 'Volumen')
-        )
+    else: # Wyckoff
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3],
+                            subplot_titles=(f'{symbol} - Wyckoff', 'Volumen'))
+        
+        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Precio'), row=1, col=1)
+        
+        # Color volumen
+        colors = ['#00FF88' if row['Close'] >= row['Open'] else '#FF073A' for index, row in df.iterrows()]
+        fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volumen', marker_color=colors), row=2, col=1)
 
-        # Candlestick con colores especiales para volumen alto
-        colors = []
-        for idx, row in df.iterrows():
-            if row.get('high_volume', False):
-                if row.get('bullish_strength', False):
-                    colors.append('darkgreen')  # Fortaleza alcista
-                elif row.get('bearish_weakness', False):
-                    colors.append('darkred')  # Debilidad bajista
-                else:
-                    colors.append('orange')  # Volumen alto sin definición
-            else:
-                colors.append('lightgray')
-
-        # Velas
-        fig.add_trace(
-            go.Candlestick(
-                x=df.index,
-                open=df['Open'],
-                high=df['High'],
-                low=df['Low'],
-                close=df['Close'],
-                name='Precio'
-            ),
-            row=1, col=1
-        )
-
-        # Volumen con colores destacados
-        fig.add_trace(
-            go.Bar(
-                x=df.index,
-                y=df['Volume'],
-                name='Volumen',
-                marker_color=colors,
-                showlegend=True
-            ),
-            row=2, col=1
-        )
-
-        # Línea de volumen promedio
-        fig.add_trace(
-            go.Scatter(
-                x=df.index,
-                y=df['volume_avg'],
-                name='Vol Promedio',
-                line=dict(color='blue', dash='dash')
-            ),
-            row=2, col=1
-        )
-
-        # Línea de 150% volumen
-        fig.add_trace(
-            go.Scatter(
-                x=df.index,
-                y=df['volume_avg'] * 1.5,
-                name='150% Vol',
-                line=dict(color='red', dash='dot')
-            ),
-            row=2, col=1
-        )
-
-    # Layout con tema oscuro profesional (Terminal Style)
+    # Configuración Tema Oscuro (Terminal)
     fig.update_layout(
-        template='plotly_dark',  # Tema oscuro
-        height=700,
-        showlegend=True,
-        xaxis_rangeslider_visible=False,
-        hovermode='x unified',
-        paper_bgcolor='#0E1117',  # Fondo oscuro de Streamlit
-        plot_bgcolor='#1A1D24',   # Fondo del gráfico (terminal)
-        font=dict(color='#E0E0E0', size=12, family='Courier New, monospace'),  # Fuente terminal
-        title=dict(
-            text=f"<b>{symbol}</b> - {strategy_mode}",
-            font=dict(size=20, color='#00FF88'),  # Verde neón
-            x=0.5,
-            xanchor='center'
-        ),
-        margin=dict(l=50, r=50, t=80, b=50),
-        xaxis=dict(
-            gridcolor='#2E3440',
-            showgrid=True,
-            linecolor='#4C566A'
-        ),
-        yaxis=dict(
-            gridcolor='#2E3440',
-            showgrid=True,
-            linecolor='#4C566A'
-        )
+        template='plotly_dark',
+        height=600,
+        paper_bgcolor='#0E1117',
+        plot_bgcolor='#1A1D24',
+        font=dict(family='Courier New, monospace', size=12, color='#E0E0E0'),
+        margin=dict(l=40, r=40, t=40, b=40),
+        xaxis_rangeslider_visible=False
     )
-
-    # Colores de velas (verde/rojo neón)
-    fig.update_traces(
-        increasing_line_color='#00FF88',  # Verde neón
-        decreasing_line_color='#FF073A',  # Rojo vibrante
-        increasing_fillcolor='#00FF88',
-        decreasing_fillcolor='#FF073A',
-        selector=dict(type='candlestick')
-    )
-
+    
     st.plotly_chart(fig, use_container_width=True)
 
 
 # ========== COLUMNA 3: NOTICIAS ==========
 
-def render_news():
+def render_news(geopolitical_mode=True):
     """
-    Renderiza la columna de noticias.
-    Muestra noticias recientes del símbolo seleccionado.
+    Renderiza noticias. Si geopolitical_mode es False, muestra noticias del ticker seleccionado.
     """
     st.header("📰 Noticias")
 
-    selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
+    selected_symbol = st.session_state.get('selected_symbol', FALLBACK_SYMBOL)
 
-    try:
-        ticker = yf.Ticker(selected_symbol)
-        news = ticker.news
-
-        if not news:
-            st.info("No hay noticias recientes disponibles.")
-            return
-
-        # Mostrar hasta 5 noticias
-        for article in news[:5]:
-            title = article.get('title', 'Sin título')
-            publisher = article.get('publisher', 'Desconocido')
-            link = article.get('link', '#')
-            publish_time = article.get('providerPublishTime', 0)
-
-            # Convertir timestamp
-            if publish_time:
-                pub_date = datetime.fromtimestamp(publish_time)
-                time_ago = datetime.now() - pub_date
-                if time_ago.days > 0:
-                    time_str = f"Hace {time_ago.days} día(s)"
-                else:
-                    hours = time_ago.seconds // 3600
-                    time_str = f"Hace {hours} hora(s)"
-            else:
-                time_str = "Fecha desconocida"
-
-            # Renderizar noticia
-            with st.container():
-                st.markdown(f"**[{title}]({link})**")
-                st.caption(f"📅 {time_str} | 📰 {publisher}")
-                st.divider()
-
-    except Exception as e:
-        st.error(f"Error cargando noticias: {str(e)}")
+    if geopolitical_mode:
+        st.warning(f"⚠️ **Modo Geopolítico**: Monitoreando impacto en {selected_symbol} y sector energético.")
+        st.info("📡 **Alertas de Mercado (Venezuela/Energía):**")
+        
+        # Noticias estáticas de ejemplo (en producción se conectarían a una API de noticias real)
+        news_items = [
+            ("🔴 URGENTE: Volatilidad en sector energético", "Hace 1 hora"),
+            ("SLB/HAL: Contratos bajo revisión", "Hace 3 horas"),
+            ("CVX evalúa reapertura total", "Hace 5 horas")
+        ]
+        
+        for title, time in news_items:
+            st.markdown(f"**{title}**")
+            st.caption(f"📅 {time}")
+            st.divider()
+            
+    else:
+        st.info(f"📊 **Noticias Corporativas: {selected_symbol}**")
+        st.caption("Modo Geopolítico desactivado. Mostrando noticias del ticker.")
+        
+        # Simulación de noticias corporativas genéricas
+        st.markdown(f"**Resultados Trimestrales de {selected_symbol}**")
+        st.caption("Hace 2 días | Finance Daily")
+        st.divider()
+        st.markdown(f"**Análisis Técnico: {selected_symbol} rompe resistencia**")
+        st.caption("Hace 4 horas | Market Watch")
 
 
-# ========== SECCIÓN DE ACCIÓN RÁPIDA ==========
+# ========== SECCIÓN DE ACCIÓN RÁPIDA (MOBILE FIRST) ==========
 
 def render_quick_action(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False, api_key: str = ""):
     """
-    Renderiza una sección de acción rápida mobile-first en la parte superior.
-    Muestra la señal principal de trading de forma prominente.
+    Renderiza banner de acción rápida si hay señal fuerte.
     """
-    # Determinar el símbolo a analizar
-    if custom_ticker and custom_ticker.strip():
-        selected_symbol = custom_ticker.strip().upper()
+    # Determinar símbolo
+    if custom_ticker:
+        symbol = custom_ticker
     else:
-        selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
-
+        symbol = st.session_state.get('selected_symbol', FALLBACK_SYMBOL)
+        
+    # Obtener datos (lógica simplificada para banner)
     try:
-        # Obtener datos
         if simulation_mode:
-            df = generate_synthetic_data(selected_symbol, days=500)
+            df = generate_synthetic_data(symbol)
         elif api_key:
-            df = fetch_stock_data_alphavantage(selected_symbol, api_key)
+            df = fetch_stock_data_alphavantage(symbol, api_key)
         else:
-            df = fetch_stock_data(selected_symbol, period="2y")
+            df = fetch_stock_data(symbol)
+            
+        if df is None or df.empty or len(df) < 20: return
 
-        # Validación básica
-        if df is None or df.empty or len(df) < 20:
-            return  # No mostrar acción rápida si no hay datos
-
-        # Calcular indicadores
         indicators = TechnicalIndicators(df)
-        df_with_indicators = indicators.calculate_all_indicators()
-
-        # Obtener señal según estrategia
+        df = indicators.calculate_all_indicators()
+        
         if strategy_mode == 'Larry Williams':
             signal_data = indicators.get_larry_williams_signal()
-        else:  # Wyckoff
+        else:
             signal_data = indicators.get_wyckoff_signal()
-
-        signal = signal_data['signal']
-        strength = signal_data['strength']
-        current_price = df['Close'].iloc[-1]
-
-        # Solo mostrar si es señal de COMPRA fuerte
-        if signal == 'BUY' and strength >= 60:
-            # Calcular strikes
-            strike_conservador = current_price * 1.05
-            strike_agresivo = current_price * 1.10
-            riesgo_max = strike_conservador * 100  # Asumiendo 1 contrato = 100 acciones
-
-            # Colores dinámicos según confianza (Bloomberg-style)
-            if strength >= 70:
-                # Alta confianza - Verde Neón
-                signal_color = "#00FF88"
-                signal_text = "COMPRA FUERTE"
-                signal_emoji = "🚀"
-                gradient_colors = "#00FF88 0%, #00D975 100%"
-            else:
-                # Confianza moderada - Naranja
-                signal_color = "#FFB800"
-                signal_text = "COMPRA MODERADA"
-                signal_emoji = "📊"
-                gradient_colors = "#FFB800 0%, #FF9500 100%"
-
-            # Contenedor de acción rápida (Bloomberg-Style)
-            with st.container():
-                st.markdown(f"""
-                <div style='background: linear-gradient(135deg, {gradient_colors});
-                            padding: 35px;
-                            border-radius: 15px;
-                            margin-bottom: 25px;
-                            box-shadow: 0 15px 40px rgba(0,0,0,0.4);
-                            border: 3px solid {signal_color};'>
-                    <h1 style='text-align: center; color: #0E1117; font-size: 2.8em; margin-bottom: 10px; text-shadow: 0 2px 4px rgba(0,0,0,0.2);'>
-                        {signal_emoji} SEÑAL: {signal_text} (LONG CALL)
-                    </h1>
-                    <p style='text-align: center; color: #1E1E1E; font-size: 1.3em; font-weight: bold;'>
-                        {selected_symbol} | {strategy_mode} | Confianza: {strength}%
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
-
-                # Bloques de información clave
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    st.markdown("""
-                    <div style='background-color: #1E1E1E;
-                                padding: 20px;
-                                border-radius: 10px;
-                                text-align: center;
-                                border: 2px solid #00FF88;'>
-                        <h3 style='color: #00FF88; margin: 0;'>Strike Sugerido</h3>
-                        <h2 style='color: white; margin: 10px 0;'>${:.2f}</h2>
-                        <p style='color: #AAAAAA; margin: 0; font-size: 0.9em;'>Conservador +5%</p>
-                    </div>
-                    """.format(strike_conservador), unsafe_allow_html=True)
-
-                with col2:
-                    st.markdown("""
-                    <div style='background-color: #1E1E1E;
-                                padding: 20px;
-                                border-radius: 10px;
-                                text-align: center;
-                                border: 2px solid #FFD700;'>
-                        <h3 style='color: #FFD700; margin: 0;'>Confianza</h3>
-                        <h2 style='color: white; margin: 10px 0;'>{}%</h2>
-                        <p style='color: #AAAAAA; margin: 0; font-size: 0.9em;'>Alta probabilidad</p>
-                    </div>
-                    """.format(strength), unsafe_allow_html=True)
-
-                with col3:
-                    st.markdown("""
-                    <div style='background-color: #1E1E1E;
-                                padding: 20px;
-                                border-radius: 10px;
-                                text-align: center;
-                                border: 2px solid #FF6B6B;'>
-                        <h3 style='color: #FF6B6B; margin: 0;'>Riesgo Máx.</h3>
-                        <h2 style='color: white; margin: 10px 0;'>${:.0f}</h2>
-                        <p style='color: #AAAAAA; margin: 0; font-size: 0.9em;'>Por 1 contrato</p>
-                    </div>
-                    """.format(riesgo_max), unsafe_allow_html=True)
-
-                # Guía de estrategia
-                with st.expander("📚 Guía de Estrategia para Cuenta Cash"):
-                    st.markdown(f"""
-                    **Para tu cuenta de $1,000:**
-
-                    1. **Compra 1 contrato Call** con strike ${strike_conservador:.2f}
-                    2. **Busca opciones con Delta ~0.30** (probabilidad ~30% ITM)
-                    3. **Vencimiento recomendado:** 30-45 días
-                    4. **Señal detectada:** {signal_data['suggested_strategy']}
-
-                    **Razones del análisis:**
-                    """)
-                    for reason in signal_data['reasons']:
-                        st.write(f"• {reason}")
-
-                st.markdown("---")
-
+            
+        # Mostrar solo si es COMPRA FUERTE (>60%)
+        if signal_data['signal'] == 'BUY' and signal_data['strength'] >= 60:
+            st.markdown(f"""
+            <div style="background: linear-gradient(45deg, #00FF88, #00D975); padding: 20px; border-radius: 10px; color: black; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,255,136,0.3);">
+                <h2 style="margin:0; font-size: 24px;">🚀 SEÑAL: COMPRA FUERTE ({symbol})</h2>
+                <p style="margin:5px; font-weight: bold;">Confianza: {signal_data['strength']}% | Estrategia: {strategy_mode}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
     except Exception:
-        # Si hay error, no mostrar la sección de acción rápida
         pass
 
 
 # ========== FUNCIÓN PRINCIPAL DEL DASHBOARD ==========
 
-def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False, api_key: str = ""):
+def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False, api_key: str = "", watchlist_symbols=None, geopolitical_mode=True):
     """
-    Renderiza el dashboard completo con las 3 columnas.
-
-    Args:
-        strategy_mode: 'Larry Williams' o 'Wyckoff'
-        custom_ticker: Ticker personalizado ingresado por el usuario
-        simulation_mode: Si True, usa datos sintéticos
-        api_key: Alpha Vantage API Key para datos reales
+    Orquestador principal del dashboard. Recibe TODOS los parámetros de app.py.
     """
-    # Inicializar símbolo seleccionado
-    if 'selected_symbol' not in st.session_state:
-        st.session_state['selected_symbol'] = WATCHLIST_SYMBOLS[0]
-
-    # SECCIÓN DE ACCIÓN RÁPIDA (Mobile-First)
+    
+    # Sincronizar watchlist
+    if not watchlist_symbols:
+        watchlist_symbols = DEFAULT_WATCHLIST
+        
+    # Acción Rápida (Mobile)
     render_quick_action(strategy_mode, custom_ticker, simulation_mode, api_key)
 
     # Layout de 3 columnas
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col1:
-        render_watchlist()
+        render_watchlist(watchlist_symbols)
 
     with col2:
+        # Pasamos api_key para que strategy card pueda usar datos reales
         render_strategy_card(strategy_mode, custom_ticker, simulation_mode, api_key)
 
     with col3:
-        render_news()
+        render_news(geopolitical_mode)

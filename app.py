@@ -94,48 +94,37 @@ def render_sidebar():
         try:
             api_key = st.secrets.get("ALPHAVANTAGE_API_KEY", "")
             if api_key:
-                st.success("✅ API Key cargada desde Secrets - Datos reales activos")
+                st.success("✅ API Key cargada")
             else:
-                st.error("❌ API Key no configurada en Secrets")
-                st.info("""
-                **Para configurar tu API Key:**
-
-                1. Ve a tu dashboard de Streamlit Cloud
-                2. Abre "Settings" → "Secrets"
-                3. Añade: `ALPHAVANTAGE_API_KEY = "tu_clave_aquí"`
-                4. Obtén tu clave gratis en: https://www.alphavantage.co/support/#api-key
-
-                Mientras tanto, usa el Modo Simulación.
-                """)
-        except Exception as e:
+                st.warning("⚠️ Sin API Key (Usando Simulación)")
+        except Exception:
             # Si no hay secrets configurados (desarrollo local)
-            st.warning("⚠️ Secrets no disponibles - Usando Modo Simulación")
             api_key = ""
-
-        # Opción manual para desarrollo/override
-        manual_key = st.text_input(
-            "API Key Manual (opcional)",
-            type="password",
-            placeholder="Solo para desarrollo local",
-            help="Sobrescribe la API Key de Secrets si es necesario"
-        )
-
-        if manual_key:
-            api_key = manual_key
-            st.info("🔧 Usando API Key manual")
 
         # Modo Simulación (automático si no hay API key)
         simulation_mode = st.toggle(
             "🎮 Modo Simulación",
             value=(not bool(api_key)),  # Activado si no hay API key
-            help="""
-            Genera datos sintéticos alcistas simulando un rally por cambio de régimen en Venezuela.
-            Se activa automáticamente si no hay API Key.
-            """
+            help="Genera datos sintéticos si no hay conexión API."
         )
 
-        if simulation_mode:
-            st.warning("⚡ Modo Simulación Activo: Usando datos sintéticos")
+        st.markdown("---")
+
+        # Watchlist Editable (Universal)
+        st.subheader("📊 Watchlist Personalizada")
+        watchlist_symbols = st.multiselect(
+            "Edita tus símbolos:",
+            options=["CVX", "SLB", "HAL", "XLE", "AAPL", "MSFT", "GOOGL", "TSLA", "SPY", "QQQ"],
+            default=["CVX", "SLB", "HAL", "XLE"],
+            help="Selecciona los tickers que quieres monitorear"
+        )
+
+        # Modo Geopolítico (Venezuela)
+        geopolitical_mode = st.toggle(
+            "🌎 Modo Geopolítico (Venezuela)",
+            value=True,
+            help="Muestra alertas sobre Maduro y análisis petrolero venezolano. Apagar para ver solo técnico."
+        )
 
         st.markdown("---")
 
@@ -146,58 +135,18 @@ def render_sidebar():
 
         st.markdown("---")
 
-        # Watchlist info
-        st.subheader("📊 Símbolos Monitoreados")
-        symbols = ["CVX", "SLB", "HAL", "XLE"]
-        for symbol in symbols:
-            st.markdown(f"• **{symbol}**")
-
-        st.markdown("---")
-
         # Información adicional
         with st.expander("ℹ️ Acerca de"):
             st.markdown("""
             **TradeOlympo v1.0**
-
-            Aplicación de análisis financiero que combina:
-            - Indicadores técnicos avanzados
-            - Análisis de volumen Wyckoff
-            - Noticias en tiempo real
-            - Sugerencias de estrategias Cash
-
-            **Stack Tecnológico:**
-            - Streamlit
-            - yfinance
-            - Plotly
-            - Pandas & NumPy
+            Stack: Streamlit | Alpha Vantage | Plotly
             """)
-
-        with st.expander("📖 Guía de Uso"):
-            st.markdown("""
-            **Cómo usar TradeOlympo:**
-
-            1. **Selecciona tu estrategia** en el sidebar
-            2. **Elige un símbolo** en el Watchlist
-            3. **Revisa la señal** en la tarjeta central
-            4. **Analiza el gráfico** interactivo
-            5. **Lee las noticias** relacionadas
-
-            **Interpretación de Señales:**
-            - 🟢 **BUY**: Oportunidad de compra
-            - 🔴 **SELL**: Considerar venta o esperar
-            - 🟡 **HOLD**: Sin señal clara
-
-            **Estrategias Cash:**
-            - Long Call: Compra de opciones Call
-            - Compra de Acciones: Compra directa
-            """)
-
-        st.markdown("---")
 
         # Footer
         st.caption(f"© 2024 TradeOlympo | {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
-    return strategy_mode, custom_ticker, simulation_mode, api_key
+    # Retornamos TODAS las variables necesarias
+    return strategy_mode, custom_ticker, simulation_mode, api_key, watchlist_symbols, geopolitical_mode
 
 
 # ========== FUNCIÓN PRINCIPAL ==========
@@ -212,76 +161,40 @@ def main():
         st.title("📈 TradeOlympo - Análisis Financiero Avanzado")
         st.markdown("*Estrategias inteligentes para cuentas Cash*")
 
-        # Renderizar sidebar y obtener configuración
-        strategy_mode, custom_ticker, simulation_mode, api_key = render_sidebar()
+        # Renderizar sidebar y obtener TODAS las configuraciones
+        strategy_mode, custom_ticker, simulation_mode, api_key, watchlist_symbols, geopolitical_mode = render_sidebar()
 
         # Mensaje de bienvenida (solo primera vez)
         if 'first_load' not in st.session_state:
             st.session_state['first_load'] = True
             mode_text = "🎮 Simulación" if simulation_mode else strategy_mode
             ticker_text = f" analizando **{custom_ticker}**" if custom_ticker else ""
-            st.info(f"""
-            ¡Bienvenido a TradeOlympo!
-
-            Modo: **{mode_text}**{ticker_text}
-            Selecciona un símbolo en el Watchlist para comenzar el análisis.
-            """)
+            st.info(f"Bienvenido a TradeOlympo! Modo: **{mode_text}**{ticker_text}")
 
         st.markdown("---")
 
-        # Renderizar dashboard principal
-        render_dashboard(strategy_mode, custom_ticker, simulation_mode, api_key)
+        # Renderizar dashboard principal pasando TODOS los argumentos
+        # IMPORTANTE: render_dashboard en views/dashboard.py debe aceptar estos argumentos
+        render_dashboard(
+            strategy_mode, 
+            custom_ticker, 
+            simulation_mode, 
+            api_key, 
+            watchlist_symbols, 
+            geopolitical_mode
+        )
 
     except Exception as e:
         # Manejo elegante de errores
         st.error("❌ Ocurrió un error inesperado")
-
         with st.expander("🔍 Ver detalles del error"):
             st.code(traceback.format_exc())
-
-        st.warning("""
-        **Posibles soluciones:**
-        - Verifica tu conexión a Internet
-        - Intenta seleccionar otro símbolo
-        - Recarga la página (F5)
-        - Revisa que los paquetes estén instalados correctamente
-        """)
-
-        # Botón para recargar
+        
         if st.button("🔄 Recargar Aplicación"):
             st.rerun()
-
-
-# ========== MANEJO DE ERRORES DE DATOS ==========
-
-def check_data_availability():
-    """
-    Verifica que se puedan obtener datos de yfinance.
-    Útil para debugging y validación inicial.
-    """
-    import yfinance as yf
-
-    try:
-        test_ticker = yf.Ticker("CVX")
-        test_data = test_ticker.history(period="1d")
-
-        if test_data.empty:
-            return False, "No se pudieron obtener datos de prueba"
-
-        return True, "Conexión exitosa"
-
-    except Exception as e:
-        return False, f"Error de conexión: {str(e)}"
 
 
 # ========== PUNTO DE ENTRADA ==========
 
 if __name__ == "__main__":
-    # Validación inicial (opcional, puede comentarse en producción)
-    # success, message = check_data_availability()
-    # if not success:
-    #     st.error(f"Error de inicialización: {message}")
-    #     st.stop()
-
-    # Ejecutar aplicación
     main()

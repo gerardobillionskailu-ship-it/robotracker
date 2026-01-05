@@ -7,6 +7,103 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Tuple
 import streamlit as st
+from datetime import datetime, timedelta
+
+# ========== FUNCIONES DE DESCARGA ROBUSTA ==========
+
+@st.cache_data(ttl=3600)  # Cache por 1 hora
+def generate_synthetic_data(symbol: str, days: int = 500) -> pd.DataFrame:
+    """Genera datos sintéticos alcistas simulando el 'Rally por cambio de régimen en Venezuela'."""
+    
+    base_prices = {'CVX': 150, 'SLB': 50, 'HAL': 35, 'XLE': 80}
+    base_price = base_prices.get(symbol, 100)
+    end_date = datetime.now()
+    dates = pd.date_range(end=end_date, periods=days, freq='D')
+
+    np.random.seed(42)
+    trend = np.linspace(0, 0.5, days)
+    volatility = np.random.randn(days) * 0.025
+    close_prices = base_price * (1 + trend + volatility.cumsum() * 0.1)
+
+    data = []
+    for i, (date, close) in enumerate(zip(dates, close_prices)):
+        daily_range = close * 0.02
+        high = close + np.random.uniform(0, daily_range)
+        low = close - np.random.uniform(0, daily_range)
+        open_price = close * 0.99 if i == 0 else close_prices[i-1] * (1 + np.random.uniform(-0.01, 0.01))
+        
+        base_volume = 5_000_000
+        volume_spike = 1 if np.random.random() > 0.85 else 0
+        volume = base_volume * (1 + volume_spike * 2) * (1 + np.random.uniform(-0.3, 0.5))
+        
+        data.append({'Open': open_price, 'High': high, 'Low': low, 'Close': close, 'Volume': int(volume)})
+
+    df = pd.DataFrame(data, index=dates)
+    df.index.name = 'Date'
+    
+    # Simular patrones de Wyckoff (trampas y volumen)
+    for i in range(-10, 0):
+        df.iloc[i, df.columns.get_loc('Close')] = df.iloc[i, df.columns.get_loc('High')] * 0.95
+        df.iloc[i, df.columns.get_loc('Volume')] *= 1.8
+
+    return df
+
+
+@st.cache_data(ttl=3600)  # Cache 1h para no saturar Alpha Vantage (5 calls/min)
+def fetch_stock_data_alphavantage(symbol: str, api_key: str) -> pd.DataFrame:
+    """Descarga datos reales usando SOLO Alpha Vantage (sin yfinance)."""
+    try:
+        from alpha_vantage.timeseries import TimeSeries
+
+        ts = TimeSeries(key=api_key, output_format='pandas')
+        data, meta_data = ts.get_daily(symbol=symbol, outputsize='full')
+
+        # Verificar si data está vacío (API error)
+        if data is None or data.empty:
+            st.error(f"⚠️ Alpha Vantage devolvió datos vacíos para {symbol}")
+            return pd.DataFrame()
+
+        # Mapeo de columnas Alpha Vantage → formato estándar
+        df = data.rename(columns={
+            '1. open': 'Open',
+            '2. high': 'High',
+            '3. low': 'Low',
+            '4. close': 'Close',
+            '5. volume': 'Volume'
+        })
+
+        df = df.sort_index()
+        df = df.tail(500)  # ~2 años
+
+        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        df = df.ffill().bfill()
+        
+        # Debugging: Mostrar info de éxito solo si es necesario
+        # st.success(f"✅ Datos cargados de Alpha Vantage: {len(df)} días para {symbol}")
+
+        return df
+
+    except Exception as e:
+        st.error(f"❌ Error en Alpha Vantage: {str(e)}")
+        return pd.DataFrame()
+
+
+def fetch_stock_data(symbol: str, period: str = "2y") -> pd.DataFrame:
+    """
+    Wrapper principal. Intenta usar Alpha Vantage desde secrets.
+    Si no hay API key o falla, retorna DataFrame vacío (que activará el modo simulación en app.py).
+    YA NO USA YFINANCE.
+    """
+    try:
+        api_key = st.secrets.get("ALPHAVANTAGE_API_KEY", "")
+        if api_key:
+            return fetch_stock_data_alphavantage(symbol, api_key)
+        else:
+            return pd.DataFrame() # Esto forzará la simulación o el error controlado
+    except Exception:
+        return pd.DataFrame()
 
 
 class TechnicalIndicators:
@@ -18,44 +115,21 @@ class TechnicalIndicators:
     def __init__(self, df: pd.DataFrame):
         """
         Inicializa el analizador de indicadores.
-
         Args:
             df: DataFrame con datos OHLCV (Open, High, Low, Close, Volume)
         """
         self.df = df.copy()
 
     def calculate_all_indicators(self) -> pd.DataFrame:
-        """
-        Calcula todos los indicadores disponibles.
-
-        Returns:
-            DataFrame con indicadores calculados
-        """
+        """Calcula todos los indicadores disponibles."""
         self.calculate_larry_williams()
         self.calculate_wyckoff_metrics()
-        # PRÓXIMOS INDICADORES:
-        # - RSI (Relative Strength Index)
-        # - MACD (Moving Average Convergence Divergence)
-        # - Bandas de Bollinger
-        # - Fibonacci Retracements
-
         return self.df
 
     # ========== LARRY WILLIAMS STRATEGY ==========
 
     def calculate_larry_williams(self) -> pd.DataFrame:
-        """
-        Implementa la estrategia de Larry Williams.
-
-        Componentes:
-        1. Williams %R: Indicador de momentum (-100 a 0)
-           - Sobrecompra: %R > -20
-           - Sobreventa: %R < -80
-        2. Medias Móviles: Detección de tendencias
-
-        Returns:
-            DataFrame con indicadores Williams calculados
-        """
+        """Implementa la estrategia de Larry Williams."""
         # Williams %R (período 14)
         period = 14
         highest_high = self.df['High'].rolling(window=period).max()
@@ -71,12 +145,12 @@ class TechnicalIndicators:
 
         # Medias Móviles (Larry Williams setup clásico)
         self.df['sma_20'] = self.df['Close'].rolling(window=20).mean()      # ~1 mes
-        self.df['sma_50'] = self.df['Close'].rolling(window=50).mean()      # ~10 semanas / 2.5 meses
-        self.df['sma_65'] = self.df['Close'].rolling(window=65).mean()      # 13 semanas (trimestral)
-        self.df['sma_200'] = self.df['Close'].rolling(window=200).mean()    # ~40 semanas / 10 meses
-        self.df['sma_250'] = self.df['Close'].rolling(window=250).mean()    # 50 semanas (~1 año)
+        self.df['sma_50'] = self.df['Close'].rolling(window=50).mean()      # ~10 semanas
+        self.df['sma_65'] = self.df['Close'].rolling(window=65).mean()      # 13 semanas
+        self.df['sma_200'] = self.df['Close'].rolling(window=200).mean()    # ~40 semanas
+        self.df['sma_250'] = self.df['Close'].rolling(window=250).mean()    # 50 semanas
 
-        # Cruces de Medias (Golden Cross / Death Cross) - usando 50 y 200
+        # Cruces de Medias
         self.df['golden_cross'] = (
             (self.df['sma_50'] > self.df['sma_200']) &
             (self.df['sma_50'].shift(1) <= self.df['sma_200'].shift(1))
@@ -89,16 +163,10 @@ class TechnicalIndicators:
         return self.df
 
     def get_larry_williams_signal(self) -> Dict[str, any]:
-        """
-        Genera señal de trading basada en Larry Williams.
+        """Genera señal de trading basada en Larry Williams."""
+        if self.df.empty:
+            return {'signal': 'HOLD', 'strength': 0, 'reasons': ['Datos insuficientes'], 'suggested_strategy': 'Esperar'}
 
-        Returns:
-            Dict con:
-                - signal: 'BUY', 'SELL', 'HOLD'
-                - strength: 0-100 (confianza de la señal)
-                - reasons: Lista de razones
-                - suggested_strategy: Estrategia recomendada para cuenta Cash
-        """
         latest = self.df.iloc[-1]
         reasons = []
         strength = 50  # Neutral
@@ -147,23 +215,13 @@ class TechnicalIndicators:
             'strength': max(0, min(100, strength)),
             'reasons': reasons,
             'suggested_strategy': suggested_strategy,
-            'williams_r': latest['williams_r']
+            'williams_r': latest.get('williams_r', 0)
         }
 
     # ========== WYCKOFF LITE STRATEGY ==========
 
     def calculate_wyckoff_metrics(self) -> pd.DataFrame:
-        """
-        Implementa métricas básicas del método Wyckoff.
-
-        Enfoque en:
-        1. Análisis de Volumen (oferta/demanda)
-        2. Posición del cierre en la vela (fuerza/debilidad)
-        3. Detección de acumulación/distribución
-
-        Returns:
-            DataFrame con métricas Wyckoff calculadas
-        """
+        """Implementa métricas básicas del método Wyckoff."""
         # Volumen promedio (20 períodos)
         self.df['volume_avg'] = self.df['Volume'].rolling(window=20).mean()
 
@@ -176,17 +234,14 @@ class TechnicalIndicators:
         self.df['high_volume'] = self.df['volume_relative'] > 150
 
         # Posición del cierre en la vela (0-100%)
-        # 100% = cierre en máximo, 0% = cierre en mínimo
         range_hl = self.df['High'] - self.df['Low']
-        range_hl = range_hl.replace(0, np.nan)  # Evitar división por 0
+        range_hl = range_hl.replace(0, np.nan) 
 
         self.df['close_position'] = (
             (self.df['Close'] - self.df['Low']) / range_hl
         ) * 100
 
         # Fortaleza de la vela
-        # Volumen alto + cierre en la parte alta = Fortaleza (acumulación)
-        # Volumen alto + cierre en la parte baja = Debilidad (distribución)
         self.df['bullish_strength'] = (
             (self.df['high_volume']) &
             (self.df['close_position'] > 70)
@@ -201,7 +256,6 @@ class TechnicalIndicators:
         self.df['spread_avg'] = self.df['spread'].rolling(window=20).mean()
 
         # Esfuerzo vs Resultado (principio Wyckoff)
-        # Volumen alto con spread pequeño = posible reversión
         self.df['effort_result_anomaly'] = (
             (self.df['volume_relative'] > 150) &
             (self.df['spread'] < self.df['spread_avg'] * 0.7)
@@ -210,14 +264,12 @@ class TechnicalIndicators:
         return self.df
 
     def get_wyckoff_signal(self) -> Dict[str, any]:
-        """
-        Genera señal de trading basada en Wyckoff.
-
-        Returns:
-            Dict con señal, fuerza, razones y estrategia
-        """
+        """Genera señal de trading basada en Wyckoff."""
+        if self.df.empty:
+            return {'signal': 'HOLD', 'strength': 0, 'reasons': ['Datos insuficientes'], 'suggested_strategy': 'Esperar'}
+            
         latest = self.df.iloc[-1]
-        recent = self.df.tail(5)  # Últimas 5 velas
+        recent = self.df.tail(5)
 
         reasons = []
         strength = 50
@@ -252,16 +304,6 @@ class TechnicalIndicators:
             reasons.append("Anomalía Wyckoff: Alto volumen con poco movimiento (posible reversión)")
             strength += 15
 
-        # Patrones de acumulación (múltiples velas con fortaleza)
-        if recent['bullish_strength'].sum() >= 3:
-            reasons.append("Patrón de acumulación detectado (3+ velas con fortaleza)")
-            strength += 20
-            signal = 'BUY'
-        elif recent['bearish_weakness'].sum() >= 3:
-            reasons.append("Patrón de distribución detectado (3+ velas con debilidad)")
-            strength -= 20
-            signal = 'SELL'
-
         # Estrategia para cuenta Cash
         if signal == 'BUY':
             suggested_strategy = "Long Call o compra de acciones (detectada posible acumulación)"
@@ -275,186 +317,15 @@ class TechnicalIndicators:
             'strength': max(0, min(100, strength)),
             'reasons': reasons,
             'suggested_strategy': suggested_strategy,
-            'volume_relative': latest['volume_relative'],
-            'close_position': latest['close_position']
+            'volume_relative': latest.get('volume_relative', 0),
+            'close_position': latest.get('close_position', 50)
         }
-
 
 # ========== FUNCIONES AUXILIARES ==========
 
 def get_support_resistance(df: pd.DataFrame, window: int = 20) -> Tuple[float, float]:
-    """
-    Calcula niveles de soporte y resistencia básicos.
-
-    Args:
-        df: DataFrame con datos OHLCV
-        window: Ventana para cálculo de niveles
-
-    Returns:
-        Tuple (soporte, resistencia)
-    """
+    """Calcula niveles de soporte y resistencia básicos."""
     recent_data = df.tail(window)
     support = recent_data['Low'].min()
     resistance = recent_data['High'].max()
-
     return support, resistance
-
-
-@st.cache_data(ttl=3600)  # Cache por 1 hora
-def fetch_stock_data(symbol: str, period: str = "2y") -> pd.DataFrame:
-    """
-    Descarga datos de acciones usando yfinance con headers robustos.
-    Implementa retry automático con periodos decrecientes.
-
-    Args:
-        symbol: Símbolo del ticker (ej: 'CVX', 'SLB')
-        period: Periodo de datos ('1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max')
-
-    Returns:
-        DataFrame con datos OHLCV o DataFrame vacío si falla
-    """
-    import yfinance as yf
-    import requests_cache
-
-    # Configurar caché para evitar hits repetidos a Yahoo Finance
-    session = requests_cache.CachedSession('yfinance.cache', expire_after=3600)
-    session.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-    # Intentar con diferentes periodos si falla
-    periods_to_try = [period, "1y", "6mo", "3mo"]
-
-    for attempt_period in periods_to_try:
-        try:
-            ticker = yf.Ticker(symbol, session=session)
-            df = ticker.history(period=attempt_period)
-
-            if not df.empty and len(df) >= 20:
-                # Asegurar que tenemos las columnas necesarias
-                required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-                if all(col in df.columns for col in required_columns):
-                    # Rellenar valores nulos si existen
-                    df = df.ffill().bfill()
-                    return df
-        except Exception:
-            continue
-
-    # Si falla con el símbolo base, intentar variantes mexicanas y brasileñas
-    for variant in [f"{symbol}.MX", f"{symbol}.SA"]:
-        try:
-            ticker = yf.Ticker(variant, session=session)
-            df = ticker.history(period="1y")
-
-            if not df.empty and len(df) >= 20:
-                df = df.ffill().bfill()
-                return df
-        except Exception:
-            continue
-
-    # Si todo falla, retornar DataFrame vacío
-    return pd.DataFrame()
-
-
-@st.cache_data(ttl=3600)  # Cache por 1 hora para no saturar Alpha Vantage (5 calls/min free tier)
-def fetch_stock_data_alphavantage(symbol: str, api_key: str) -> pd.DataFrame:
-    """
-    Descarga datos de acciones usando Alpha Vantage API.
-    Alternativa a yfinance cuando hay bloqueos de IP.
-
-    Args:
-        symbol: Símbolo del ticker (ej: 'CVX', 'SLB')
-        api_key: Alpha Vantage API Key
-
-    Returns:
-        DataFrame con datos OHLCV o DataFrame vacío si falla
-    """
-    try:
-        from alpha_vantage.timeseries import TimeSeries
-
-        ts = TimeSeries(key=api_key, output_format='pandas')
-        data, meta_data = ts.get_daily(symbol=symbol, outputsize='full')
-
-        # Renombrar columnas para que coincidan con yfinance
-        df = data.rename(columns={
-            '1. open': 'Open',
-            '2. high': 'High',
-            '3. low': 'Low',
-            '4. close': 'Close',
-            '5. volume': 'Volume'
-        })
-
-        # Ordenar por fecha (más antiguo primero)
-        df = df.sort_index()
-
-        # Tomar últimos 500 días (~2 años de trading)
-        df = df.tail(500)
-
-        # Asegurar tipos numéricos
-        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-
-        # Rellenar valores nulos
-        df = df.ffill().bfill()
-
-        return df
-
-    except Exception as e:
-        # Retornar DataFrame vacío si falla
-        return pd.DataFrame()
-
-
-def generate_synthetic_data(symbol: str, days: int = 500) -> pd.DataFrame:
-    """
-    Genera datos sintéticos alcistas para demostración.
-    Simula un rally por cambio de régimen en Venezuela.
-
-    Args:
-        symbol: Símbolo del ticker (para naming)
-        days: Cantidad de días de datos
-
-    Returns:
-        DataFrame con datos OHLCV sintéticos alcistas
-    """
-    from datetime import datetime, timedelta
-
-    # Generar fechas
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=days)
-    dates = pd.date_range(start=start_date, end=end_date, freq='D')
-
-    # Precio base según símbolo
-    base_prices = {
-        'CVX': 150,
-        'SLB': 50,
-        'HAL': 35,
-        'XLE': 80
-    }
-    base_price = base_prices.get(symbol, 100)
-
-    # Generar tendencia alcista con volatilidad
-    np.random.seed(42)
-    trend = np.linspace(base_price, base_price * 1.5, len(dates))
-    volatility = np.random.normal(0, base_price * 0.02, len(dates))
-    close_prices = trend + volatility
-
-    # Generar OHLC basado en Close
-    df = pd.DataFrame(index=dates)
-    df['Close'] = close_prices
-    df['Open'] = df['Close'].shift(1).fillna(df['Close'].iloc[0])
-    df['High'] = df[['Open', 'Close']].max(axis=1) * (1 + np.random.uniform(0, 0.02, len(df)))
-    df['Low'] = df[['Open', 'Close']].min(axis=1) * (1 - np.random.uniform(0, 0.02, len(df)))
-    df['Volume'] = np.random.randint(1000000, 5000000, len(df))
-
-    # Asegurar tipos numéricos
-    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-
-    return df
-
-
-# PRÓXIMAS FUNCIONES A IMPLEMENTAR:
-# - calculate_rsi(): Índice de Fuerza Relativa
-# - calculate_macd(): MACD y señal
-# - calculate_bollinger_bands(): Bandas de Bollinger
-# - detect_chart_patterns(): Detección de patrones (cabeza y hombros, triángulos, etc.)
-# - calculate_fibonacci_levels(): Niveles de retroceso de Fibonacci
-# - volume_profile(): Perfil de volumen por precio
