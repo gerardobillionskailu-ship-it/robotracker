@@ -6,6 +6,7 @@ import streamlit as st
 import json
 import os
 from datetime import datetime
+from utils.market_presets import PRESETS, get_preset_names, get_preset_tickers
 
 st.set_page_config(
     page_title="🤖 Control Room",
@@ -130,31 +131,68 @@ with col_left:
 with col_right:
     st.markdown("#### 📋 Editor de Watchlist")
 
+    # ========== SELECTOR DE MISIÓN (PRESETS) ==========
+    st.markdown("**🎯 Cargar Misión Pre-configurada:**")
+
+    mission_options = ["-- Manual --"] + get_preset_names()
+    selected_mission = st.selectbox(
+        "Selecciona un sector o misión:",
+        options=mission_options,
+        help="Carga automáticamente una lista de tickers por sector"
+    )
+
+    # Botón para cargar misión
+    if selected_mission != "-- Manual --":
+        if st.button("🚀 Cargar Misión", key="load_mission", use_container_width=True):
+            mission_tickers = get_preset_tickers(selected_mission)
+            if mission_tickers:
+                st.session_state['loaded_watchlist'] = ", ".join(mission_tickers)
+                st.success(f"✅ Misión cargada: {len(mission_tickers)} tickers de {selected_mission}")
+                st.rerun()
+
+    st.markdown("---")
+
+    # ========== EDITOR MANUAL DE WATCHLIST ==========
     current_watchlist = config.get('watchlist', [])
-    watchlist_text = ", ".join(current_watchlist)
+
+    # Si hay una misión cargada en session_state, usarla
+    if 'loaded_watchlist' in st.session_state:
+        watchlist_text = st.session_state['loaded_watchlist']
+        # Limpiar después de cargar
+        del st.session_state['loaded_watchlist']
+    else:
+        watchlist_text = ", ".join(current_watchlist)
 
     new_watchlist_text = st.text_area(
         "Ingresa los tickers separados por comas:",
         value=watchlist_text,
-        height=100,
-        help="Ejemplo: NVDA, TSLA, AAPL, AMD, MSFT"
+        height=120,
+        help="Puedes modificar manualmente los tickers cargados o escribir los tuyos"
     )
 
-    if st.button("💾 Guardar Watchlist", key="save_watchlist"):
-        # Parsear y limpiar
-        new_watchlist = [ticker.strip().upper() for ticker in new_watchlist_text.split(',') if ticker.strip()]
+    col_btn1, col_btn2 = st.columns([2, 1])
 
-        if len(new_watchlist) == 0:
-            st.error("❌ La watchlist no puede estar vacía")
-        elif len(new_watchlist) > 20:
-            st.error("❌ Máximo 20 tickers permitidos")
-        else:
-            config['watchlist'] = new_watchlist
-            if save_config(config):
-                st.success(f"✅ Watchlist actualizada: {len(new_watchlist)} tickers guardados")
-                st.rerun()
+    with col_btn1:
+        if st.button("💾 Guardar Watchlist", key="save_watchlist", use_container_width=True):
+            # Parsear y limpiar
+            new_watchlist = [ticker.strip().upper() for ticker in new_watchlist_text.split(',') if ticker.strip()]
+
+            if len(new_watchlist) == 0:
+                st.error("❌ La watchlist no puede estar vacía")
+            elif len(new_watchlist) > 20:
+                st.error("❌ Máximo 20 tickers permitidos")
             else:
-                st.error("❌ Error al guardar")
+                config['watchlist'] = new_watchlist
+                if save_config(config):
+                    st.success(f"✅ Watchlist actualizada: {len(new_watchlist)} tickers guardados")
+                    st.rerun()
+                else:
+                    st.error("❌ Error al guardar")
+
+    with col_btn2:
+        if st.button("🗑️ Limpiar", key="clear_watchlist", use_container_width=True):
+            st.session_state['loaded_watchlist'] = ""
+            st.rerun()
 
 st.markdown("---")
 
