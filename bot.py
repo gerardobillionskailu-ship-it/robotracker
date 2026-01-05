@@ -8,9 +8,8 @@ Lógica de Trading:
 - Juez 3 (Momentum): Precio > SMA 20
 
 Ejecuta COMPRA solo si los 3 jueces aprueban y no hay posición abierta.
-Segunda modificacion manual por Gemini
+Tercera modificacion manual por Gemini
 """
-
 import os
 import alpaca_trade_api as tradeapi
 import pandas as pd
@@ -23,10 +22,10 @@ API_KEY = os.environ.get('ALPACA_API_KEY')
 SECRET_KEY = os.environ.get('ALPACA_SECRET_KEY')
 ENDPOINT = os.environ.get('ALPACA_ENDPOINT')
 
-# TUS ACCIONES FAVORITAS (TECH WATCHLIST)
+# WATCHLIST (Tech Giants)
 WATCHLIST = ['NVDA', 'TSLA', 'AAPL', 'AMZN', 'MSFT', 'AMD']
 
-# --- HERRAMIENTAS DE ANÁLISIS ---
+# --- INDICADORES ---
 def calcular_rsi(series, period=14):
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -39,10 +38,10 @@ def calcular_sma(series, window):
 
 # --- CEREBRO DEL BOT ---
 def run_bot():
-    print(f"--- 🧠 INICIANDO ANÁLISIS (VERSIÓN DIARIA CORREGIDA): {datetime.now()} ---")
+    print(f"--- 🚀 INICIANDO VERSIÓN FINAL (DÍAS) - {datetime.now()} ---")
     
     if not API_KEY or not SECRET_KEY:
-        print("ERROR: Credenciales no encontradas.")
+        print("❌ ERROR: No hay API KEYS.")
         return
 
     api = tradeapi.REST(API_KEY, SECRET_KEY, ENDPOINT, api_version='v2')
@@ -51,72 +50,64 @@ def run_bot():
     try:
         clock = api.get_clock()
         print(f"🕐 Mercado Abierto: {clock.is_open}")
-    except Exception as e:
-        print(f"Nota: No se pudo verificar horario (Error: {e}). Continuando igual...")
-    
-    # BUCLE PRINCIPAL
+    except:
+        print("⚠️ No se pudo verificar horario. Continuando...")
+
+    # BUCLE DE ANÁLISIS
     for symbol in WATCHLIST:
         try:
             print(f"\n🔍 Analizando: {symbol}...")
             
-            # --- EL FIX MAESTRO: PEDIR DÍAS (Day), NO HORAS ---
-            # Pedimos 300 días de historia para asegurar que la SMA 200 funcione
-            bars = api.get_bars(symbol, tradeapi.TimeFrame.Day, limit=300).df
+            # --- SOLICITUD DE DATOS DIARIOS (Day) ---
+            # Pedimos 365 días para asegurar SMA 200
+            bars = api.get_bars(symbol, tradeapi.TimeFrame.Day, limit=365).df
             
+            # Debug: Mostrar cuántos datos llegaron
+            print(f"   📥 Datos descargados: {len(bars)} días.")
+
             if len(bars) < 200:
-                print(f"   ⚠️ Datos insuficientes para {symbol} ({len(bars)} velas). Saltando.")
+                print(f"   ⚠️ Aún con TimeFrame.Day, hay pocos datos ({len(bars)}). Saltando.")
                 continue
                 
-            # Limpieza de datos
+            # Datos listos
             closes = bars['close']
             current_price = closes.iloc[-1]
             
-            # Calcular Indicadores
+            # Indicadores
             rsi = calcular_rsi(closes).iloc[-1]
             sma_200 = calcular_sma(closes, 200).iloc[-1]
             sma_20 = calcular_sma(closes, 20).iloc[-1]
             
             print(f"   📊 Precio: ${current_price:.2f} | RSI: {rsi:.2f} | SMA200: {sma_200:.2f} | SMA20: {sma_20:.2f}")
             
-            # --- EL TRIBUNAL (3 JUECES) ---
-            juez_tendencia = current_price > sma_200      # Juez 1: Tendencia Alcista
-            juez_oportunidad = rsi < 70                   # Juez 2: No está caro
-            juez_momentum = current_price > sma_20        # Juez 3: Fuerza corto plazo
+            # --- LOS 3 JUECES ---
+            juez_tendencia = current_price > sma_200
+            juez_oportunidad = rsi < 70
+            juez_momentum = current_price > sma_20
             
-            # Veredicto
             if juez_tendencia and juez_oportunidad and juez_momentum:
-                print(f"   ✅ VEREDICTO: COMPRAR {symbol} (3/3 Jueces Aprobado)")
+                print(f"   ✅ COMPRAR {symbol} (Aprobado)")
                 
-                # Verificar si ya tenemos la acción
+                # Verificar posición
                 try:
                     pos = api.get_position(symbol)
                     if int(pos.qty) > 0:
-                        print(f"   ✋ Ya tienes {symbol}. Mantenemos posición.")
+                        print("   ✋ Ya tenemos posición. Nada que hacer.")
                         continue
                 except:
-                    pass # No hay posición
+                    pass 
                 
-                # EJECUTAR COMPRA
-                print(f"   🚀 ENVIANDO ORDEN DE COMPRA POR {symbol}...")
-                api.submit_order(
-                    symbol=symbol,
-                    qty=1,
-                    side='buy',
-                    type='market',
-                    time_in_force='gtc' # Good till cancelled
-                )
+                # Ejecutar
+                api.submit_order(symbol=symbol, qty=1, side='buy', type='market', time_in_force='gtc')
+                print("   🚀 ORDEN ENVIADA.")
                 
             else:
-                fallos = []
-                if not juez_tendencia: fallos.append("Tendencia Bajista (Debajo SMA200)")
-                if not juez_oportunidad: fallos.append(f"RSI Alto ({rsi:.0f})")
-                if not juez_momentum: fallos.append("Sin Momentum (Debajo SMA20)")
-                print(f"   ❌ DESCARTADO. Razones: {', '.join(fallos)}")
+                print(f"   ❌ DESCARTADO (Tendencia:{juez_tendencia}, RSI:{juez_oportunidad}, Mom:{juez_momentum})")
                 
         except Exception as e:
-            print(f"   Error analizando {symbol}: {e}")
+            print(f"   Error en {symbol}: {e}")
 
-    print("\n--- 🏁 ANÁLISIS FINALIZADO ---")
+    print("\n--- FIN DEL ANÁLISIS ---")
 
 if __name__ == "__main__":
     run_bot()
