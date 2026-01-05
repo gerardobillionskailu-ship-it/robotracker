@@ -55,36 +55,49 @@ def render_watchlist(symbols=None):
 
 # ========== COLUMNA 2: TARJETA DE ESTRATEGIA DINÁMICA ==========
 
-def render_strategy_card(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False, api_key: str = ""):
+def calculate_optimal_strike(current_price: float) -> float:
     """
-    Renderiza la tarjeta de estrategia que cambia dinámicamente.
-    Acepta api_key para usar datos reales de Alpha Vantage.
+    Calcula el strike ideal para un Call (ATM +5%).
+    Redondea a decimales lógicos según el precio.
     """
-    st.header("🎯 Estrategia de Trading")
+    strike = current_price * 1.05
 
-    # Usar ticker personalizado si está presente, sino usar del watchlist
+    # Redondeo lógico según magnitud del precio
+    if strike < 10:
+        return round(strike, 2)  # Ej: $9.47 → $9.47
+    elif strike < 100:
+        return round(strike * 2) / 2  # Ej: $47.3 → $47.50 (múltiplos de $0.50)
+    else:
+        return round(strike)  # Ej: $147.8 → $148
+
+
+def render_dual_strategy_card(custom_ticker: str = "", simulation_mode: bool = False, api_key: str = ""):
+    """
+    Renderiza VISIÓN DOBLE: Larry Williams y Wyckoff simultáneamente.
+    Incluye cálculo de Strike Ideal con tarjeta prominente.
+    """
+    st.header("🎯 Panel de Control Unificado")
+
+    # Determinar símbolo
     if custom_ticker and custom_ticker.strip():
         selected_symbol = custom_ticker.strip().upper()
         st.info(f"📊 Analizando ticker personalizado: **{selected_symbol}**")
-        # Actualizar session state para que otras vistas se sincronicen
         st.session_state['selected_symbol'] = selected_symbol
     else:
         selected_symbol = st.session_state.get('selected_symbol', FALLBACK_SYMBOL)
 
     try:
-        # Lógica de obtención de datos
+        # Obtención de datos (manejo seguro de api_key None)
         if simulation_mode:
             st.success("🎮 Usando datos sintéticos - Rally por cambio de régimen")
             df = generate_synthetic_data(selected_symbol, days=500)
-        elif api_key:
-            # Si hay API Key explícita, usarla con la función específica
-            # st.success(f"✅ Descargando datos reales de **{selected_symbol}**...") 
+        elif api_key and api_key.strip():  # Verificar que api_key no sea None o vacío
             df = fetch_stock_data_alphavantage(selected_symbol, api_key)
         else:
-            # Fallback a la función genérica (que busca en secrets)
+            # Fallback a secrets
             df = fetch_stock_data(selected_symbol, period="2y")
 
-        # Validaciones de Datos
+        # Validaciones
         if df is None or df.empty or len(df) < 20:
             st.error(f"❌ No se pudieron obtener suficientes datos para {selected_symbol}")
             st.info("""
@@ -92,12 +105,11 @@ def render_strategy_card(strategy_mode: str, custom_ticker: str = "", simulation
             - El símbolo no existe o está mal escrito
             - Límite de API Alpha Vantage alcanzado (espera 1 min)
             - Problemas de conexión
-            
+
             **Sugerencia:** Activa el 'Modo Simulación' en el sidebar para probar.
             """)
             return
 
-        # Validar columnas
         required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
         if not all(col in df.columns for col in required_columns):
             st.error("❌ Datos incompletos recibidos de la API")
@@ -111,19 +123,108 @@ def render_strategy_card(strategy_mode: str, custom_ticker: str = "", simulation
             st.error("❌ Error al calcular indicadores técnicos")
             return
 
-        # Renderizar tarjeta según estrategia seleccionada
-        if strategy_mode == 'Larry Williams':
-            signal_data = indicators.get_larry_williams_signal()
-            render_larry_williams_card(selected_symbol, signal_data, df_with_indicators)
-        else:  # Wyckoff
-            signal_data = indicators.get_wyckoff_signal()
-            render_wyckoff_card(selected_symbol, signal_data, df_with_indicators)
+        # Obtener señales de AMBAS estrategias
+        larry_signal = indicators.get_larry_williams_signal()
+        wyckoff_signal = indicators.get_wyckoff_signal()
 
-        # Gráfico interactivo
-        render_chart(selected_symbol, df_with_indicators, strategy_mode)
+        current_price = df_with_indicators['Close'].iloc[-1]
+
+        # ========== STRIKE IDEAL (Tarjeta prominente) ==========
+        strike_ideal = calculate_optimal_strike(current_price)
+
+        # Determinar si mostrar strike (si AL MENOS una estrategia dice BUY con >50% confianza)
+        show_strike = (
+            (larry_signal['signal'] == 'BUY' and larry_signal['strength'] >= 50) or
+            (wyckoff_signal['signal'] == 'BUY' and wyckoff_signal['strength'] >= 50)
+        )
+
+        if show_strike:
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #00FF88 0%, #00D975 100%);
+                        padding: 25px;
+                        border-radius: 12px;
+                        text-align: center;
+                        margin: 20px 0;
+                        box-shadow: 0 6px 20px rgba(0,255,136,0.4);
+                        border: 2px solid #00FF88;">
+                <h2 style="margin:0; color: #000; font-size: 28px; font-weight: bold;">
+                    🎯 STRIKE SUGERIDO: Call ${strike_ideal:.2f}
+                </h2>
+                <p style="margin: 10px 0 0 0; color: #1A1D24; font-size: 16px; font-weight: 600;">
+                    📅 Vencimiento recomendado: 30-45 días | 💰 Precio actual: ${current_price:.2f}
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # ========== VISIÓN DOBLE: Dos columnas ==========
+        col_larry, col_wyckoff = st.columns(2)
+
+        with col_larry:
+            st.subheader("📊 Larry Williams")
+            render_larry_williams_mini(selected_symbol, larry_signal, df_with_indicators)
+
+        with col_wyckoff:
+            st.subheader("🐋 Wyckoff")
+            render_wyckoff_mini(selected_symbol, wyckoff_signal, df_with_indicators)
+
+        st.markdown("---")
+
+        # ========== GRÁFICO UNIFICADO ==========
+        render_chart(selected_symbol, df_with_indicators, "Larry Williams")  # Mostrar Larry por defecto
 
     except Exception as e:
         st.error(f"❌ Error inesperado: {str(e)}")
+        with st.expander("🔍 Ver detalles técnicos"):
+            import traceback
+            st.code(traceback.format_exc())
+
+
+def render_larry_williams_mini(symbol: str, signal_data: dict, df: pd.DataFrame):
+    """Versión compacta de Larry Williams para visión doble"""
+    signal = signal_data['signal']
+    strength = signal_data['strength']
+    current_price = df['Close'].iloc[-1]
+
+    # Señal visual
+    if signal == 'BUY':
+        st.success(f"### 🟢 BUY ({strength}%)")
+    elif signal == 'SELL':
+        st.error(f"### 🔴 SELL ({strength}%)")
+    else:
+        st.info(f"### 🟡 HOLD ({strength}%)")
+
+    # Métricas compactas
+    col1, col2 = st.columns(2)
+    col1.metric("💰 Precio", f"${current_price:.2f}")
+    col2.metric("Williams %R", f"{signal_data['williams_r']:.1f}")
+
+    # Razón principal
+    st.caption(f"**Razón**: {signal_data['suggested_strategy'][:80]}...")
+
+
+def render_wyckoff_mini(symbol: str, signal_data: dict, df: pd.DataFrame):
+    """Versión compacta de Wyckoff para visión doble"""
+    signal = signal_data['signal']
+    strength = signal_data['strength']
+    current_price = df['Close'].iloc[-1]
+
+    # Señal visual
+    if signal == 'BUY':
+        st.success(f"### 🐋 ACUMULACIÓN ({strength}%)")
+    elif signal == 'SELL':
+        st.error(f"### 🐋 DISTRIBUCIÓN ({strength}%)")
+    else:
+        st.info(f"### 🟡 NEUTRAL ({strength}%)")
+
+    # Métricas compactas
+    col1, col2 = st.columns(2)
+    col1.metric("💰 Precio", f"${current_price:.2f}")
+    col2.metric("Vol. Rel.", f"{signal_data['volume_relative']:.0f}%")
+
+    # Razón principal
+    st.caption(f"**Razón**: {signal_data['suggested_strategy'][:80]}...")
 
 
 def render_larry_williams_card(symbol: str, signal_data: dict, df: pd.DataFrame):
@@ -358,14 +459,16 @@ def render_quick_action(strategy_mode: str, custom_ticker: str = "", simulation_
 def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mode: bool = False, api_key: str = "", watchlist_symbols=None, geopolitical_mode=True):
     """
     Orquestador principal del dashboard. Recibe TODOS los parámetros de app.py.
+    NOTA: strategy_mode se ignora ahora - siempre mostramos VISIÓN DOBLE.
     """
-    
+
     # Sincronizar watchlist
     if not watchlist_symbols:
         watchlist_symbols = DEFAULT_WATCHLIST
-        
-    # Acción Rápida (Mobile)
-    render_quick_action(strategy_mode, custom_ticker, simulation_mode, api_key)
+
+    # Acción Rápida (Mobile) - manejo seguro de api_key None
+    api_key_safe = api_key if api_key else ""
+    render_quick_action(strategy_mode, custom_ticker, simulation_mode, api_key_safe)
 
     # Layout de 3 columnas
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -374,8 +477,8 @@ def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mod
         render_watchlist(watchlist_symbols)
 
     with col2:
-        # Pasamos api_key para que strategy card pueda usar datos reales
-        render_strategy_card(strategy_mode, custom_ticker, simulation_mode, api_key)
+        # VISIÓN DOBLE: Siempre mostramos Larry Williams y Wyckoff juntos
+        render_dual_strategy_card(custom_ticker, simulation_mode, api_key_safe)
 
     with col3:
         render_news(geopolitical_mode)

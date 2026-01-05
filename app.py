@@ -75,19 +75,8 @@ def render_sidebar():
 
         # Mostrar configuraciones solo si estamos en Dashboard
         if page == "📈 Dashboard":
-            # Selección de estrategia
-            st.subheader("🎯 Modo de Estrategia")
-
-            strategy_mode = st.radio(
-                "Selecciona tu estrategia de análisis:",
-                options=["Larry Williams", "Wyckoff"],
-                index=0,
-                help="""
-                **Larry Williams**: Utiliza Williams %R y medias móviles para detectar momentum.
-
-                **Wyckoff**: Analiza volumen y posición del cierre para identificar acumulación/distribución.
-                """
-            )
+            # NOTA: Removido selector de estrategia - ahora mostramos VISIÓN DOBLE siempre
+            st.info("💡 **Visión Doble**: Viendo Larry Williams y Wyckoff simultáneamente")
 
             st.markdown("---")
 
@@ -140,11 +129,13 @@ def render_sidebar():
 
         else:
             # Si está en Guía, solo mostrar info básica
-            strategy_mode = "Larry Williams"
             custom_ticker = ""
             simulation_mode = False
             watchlist_symbols = ["CVX", "SLB", "HAL", "XLE"]
             geopolitical_mode = True
+
+        # strategy_mode siempre es "Dual" ahora (no se usa pero lo retornamos por compatibilidad)
+        strategy_mode = "Dual"
 
         st.markdown("---")
 
@@ -154,10 +145,10 @@ def render_sidebar():
             **TradeOlympo v1.0**
 
             Aplicación de análisis financiero que combina:
-            - Indicadores técnicos avanzados
-            - Análisis de volumen Wyckoff
-            - Noticias en tiempo real
-            - Sugerencias de estrategias Cash
+            - **Visión Doble**: Larry Williams + Wyckoff simultáneamente
+            - Cálculo automático de Strike Ideal
+            - Gestión de riesgo con regla del 15%
+            - Noticias contextuales
 
             **Stack Tecnológico:**
             - Streamlit
@@ -198,19 +189,25 @@ def main():
             # Mensaje de bienvenida (solo primera vez)
             if 'first_load' not in st.session_state:
                 st.session_state['first_load'] = True
-                mode_text = "🎮 Simulación" if simulation_mode else strategy_mode
+                mode_text = "🎮 Simulación" if simulation_mode else "Visión Doble (Larry + Wyckoff)"
                 ticker_text = f" analizando **{custom_ticker}**" if custom_ticker else ""
                 st.info(f"""
                 ¡Bienvenido a TradeOlympo!
 
                 Modo: **{mode_text}**{ticker_text}
-                Selecciona un símbolo en el Watchlist para comenzar el análisis.
+                Selecciona un símbolo en el Watchlist para ver ambas estrategias.
                 """)
 
             st.markdown("---")
 
-            # Renderizar dashboard principal
-            render_dashboard(strategy_mode, custom_ticker, simulation_mode, watchlist_symbols, geopolitical_mode)
+            # Obtener API key de secrets de forma segura
+            try:
+                api_key = st.secrets.get("ALPHAVANTAGE_API_KEY", "")
+            except Exception:
+                api_key = ""
+
+            # Renderizar dashboard principal con api_key
+            render_dashboard(strategy_mode, custom_ticker, simulation_mode, api_key, watchlist_symbols, geopolitical_mode)
 
     except Exception as e:
         # Manejo elegante de errores
