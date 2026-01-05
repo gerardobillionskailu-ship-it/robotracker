@@ -14,6 +14,7 @@ from utils.indicators import TechnicalIndicators, get_support_resistance, fetch_
 # ========== CONFIGURACIÓN ==========
 
 DEFAULT_WATCHLIST = ['CVX', 'SLB', 'HAL', 'XLE']
+FALLBACK_SYMBOL = "AAPL"  # Símbolo por defecto si no hay selección
 
 
 # ========== COLUMNA 1: WATCHLIST ==========
@@ -68,7 +69,7 @@ def render_strategy_card(strategy_mode: str, custom_ticker: str = "", simulation
         selected_symbol = custom_ticker.strip().upper()
         st.info(f"📊 Analizando ticker personalizado: **{selected_symbol}**")
     else:
-        selected_symbol = st.session_state.get('selected_symbol', WATCHLIST_SYMBOLS[0])
+        selected_symbol = st.session_state.get('selected_symbol', FALLBACK_SYMBOL)
 
     try:
         # Obtener datos: sintéticos o reales
