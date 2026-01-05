@@ -208,103 +208,15 @@ def render_action_card(strike: float, current_price: float, elite_buy: bool = Fa
     gradient = f"linear-gradient(135deg, {banner_color} 0%, {'#FFA500' if elite_buy else '#00D975'} 100%)"
     title = "🏆 SEÑAL ÉLITE DETECTADA" if elite_buy else "🎯 SEÑAL DE COMPRA"
 
-    st.markdown(f"""
-    <div style="background: {gradient};
-                padding: 25px 20px;
-                border-radius: 15px;
-                margin-bottom: 20px;
-                box-shadow: 0 6px 20px rgba({'255,215,0' if elite_buy else '0,255,136'},0.4);">
+    # Escapar valores para HTML
+    title_safe = str(title).replace('<', '&lt;').replace('>', '&gt;')
+    strike_str = f"${strike:.2f}"
+    current_price_str = f"${current_price:.2f}"
+    stop_loss_str = f"${stop_loss_price:.2f}"
+    take_profit_str = f"${take_profit_price:.2f}"
+    rgba_shadow = '255,215,0' if elite_buy else '0,255,136'
 
-        <h2 style="margin: 0 0 20px 0;
-                   font-size: 24px;
-                   font-weight: 800;
-                   color: #000;
-                   text-align: center;">
-            {title}
-        </h2>
-
-        <!-- Entrada -->
-        <div style="background: rgba(0,0,0,0.15);
-                    padding: 15px;
-                    border-radius: 10px;
-                    margin-bottom: 12px;">
-            <div style="font-size: 13px;
-                        font-weight: 600;
-                        color: #000;
-                        opacity: 0.8;
-                        margin-bottom: 5px;">
-                🎯 ENTRADA
-            </div>
-            <div style="font-size: 28px;
-                        font-weight: 900;
-                        color: #000;">
-                Call ${strike:.2f}
-            </div>
-            <div style="font-size: 12px;
-                        color: #000;
-                        opacity: 0.7;
-                        margin-top: 3px;">
-                Vencimiento: 30-45 días | Precio actual: ${current_price:.2f}
-            </div>
-        </div>
-
-        <!-- Stop Loss y Take Profit -->
-        <div style="display: flex;
-                    gap: 10px;
-                    flex-wrap: wrap;">
-
-            <!-- Stop Loss -->
-            <div style="flex: 1;
-                        min-width: 140px;
-                        background: rgba(255,7,58,0.2);
-                        border: 2px solid #FF073A;
-                        padding: 12px;
-                        border-radius: 8px;">
-                <div style="font-size: 11px;
-                            font-weight: 700;
-                            color: #000;
-                            margin-bottom: 5px;">
-                    🛑 STOP LOSS
-                </div>
-                <div style="font-size: 20px;
-                            font-weight: 800;
-                            color: #FF073A;">
-                    ${stop_loss_price:.2f}
-                </div>
-                <div style="font-size: 10px;
-                            color: #000;
-                            opacity: 0.7;">
-                    -25% del premium
-                </div>
-            </div>
-
-            <!-- Take Profit -->
-            <div style="flex: 1;
-                        min-width: 140px;
-                        background: rgba(0,255,136,0.2);
-                        border: 2px solid #00FF88;
-                        padding: 12px;
-                        border-radius: 8px;">
-                <div style="font-size: 11px;
-                            font-weight: 700;
-                            color: #000;
-                            margin-bottom: 5px;">
-                    💰 TAKE PROFIT
-                </div>
-                <div style="font-size: 20px;
-                            font-weight: 800;
-                            color: #00D975;">
-                    ${take_profit_price:.2f}
-                </div>
-                <div style="font-size: 10px;
-                            color: #000;
-                            opacity: 0.7;">
-                    +40% del premium
-                </div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"""<div style="background: {gradient}; padding: 25px 20px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 6px 20px rgba({rgba_shadow},0.4);"><h2 style="margin: 0 0 20px 0; font-size: 24px; font-weight: 800; color: #000; text-align: center;">{title_safe}</h2><div style="background: rgba(0,0,0,0.15); padding: 15px; border-radius: 10px; margin-bottom: 12px;"><div style="font-size: 13px; font-weight: 600; color: #000; opacity: 0.8; margin-bottom: 5px;">🎯 ENTRADA</div><div style="font-size: 28px; font-weight: 900; color: #000;">Call {strike_str}</div><div style="font-size: 12px; color: #000; opacity: 0.7; margin-top: 3px;">Vencimiento: 30-45 días | Precio actual: {current_price_str}</div></div><div style="display: flex; gap: 10px; flex-wrap: wrap;"><div style="flex: 1; min-width: 140px; background: rgba(255,7,58,0.2); border: 2px solid #FF073A; padding: 12px; border-radius: 8px;"><div style="font-size: 11px; font-weight: 700; color: #000; margin-bottom: 5px;">🛑 STOP LOSS</div><div style="font-size: 20px; font-weight: 800; color: #FF073A;">{stop_loss_str}</div><div style="font-size: 10px; color: #000; opacity: 0.7;">-25% del premium</div></div><div style="flex: 1; min-width: 140px; background: rgba(0,255,136,0.2); border: 2px solid #00FF88; padding: 12px; border-radius: 8px;"><div style="font-size: 11px; font-weight: 700; color: #000; margin-bottom: 5px;">💰 TAKE PROFIT</div><div style="font-size: 20px; font-weight: 800; color: #00D975;">{take_profit_str}</div><div style="font-size: 10px; color: #000; opacity: 0.7;">+40% del premium</div></div></div></div>""", unsafe_allow_html=True)
 
 # ========== STRIKE CALCULATOR ==========
 
@@ -572,31 +484,7 @@ def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mod
             # Tarjeta HOLD
             max_strength = max(larry_signal['strength'], wyckoff_signal['strength'], elite_signal['strength'])
 
-            st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #FFA500 0%, #FF8C00 100%);
-                        padding: 20px;
-                        border-radius: 15px;
-                        text-align: center;
-                        margin-bottom: 20px;">
-                <h2 style="margin: 0;
-                           font-size: 24px;
-                           font-weight: 800;
-                           color: #000;">
-                    🟡 ESPERAR / HOLD
-                </h2>
-                <p style="margin: 10px 0 0 0;
-                          font-size: 16px;
-                          color: #000;
-                          opacity: 0.8;">
-                    Sin confluencia de señales de compra
-                </p>
-                <p style="margin: 5px 0 0 0;
-                          font-size: 14px;
-                          color: #000;">
-                    Confianza máxima: {max_strength}%
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div style="background: linear-gradient(135deg, #FFA500 0%, #FF8C00 100%); padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 20px;"><h2 style="margin: 0; font-size: 24px; font-weight: 800; color: #000;">🟡 ESPERAR / HOLD</h2><p style="margin: 10px 0 0 0; font-size: 16px; color: #000; opacity: 0.8;">Sin confluencia de señales de compra</p><p style="margin: 5px 0 0 0; font-size: 14px; color: #000;">Confianza máxima: {max_strength}%</p></div>""", unsafe_allow_html=True)
 
         # ========== 6. DETALLES TÉCNICOS ==========
         render_technical_details(selected_symbol, larry_signal, wyckoff_signal, elite_signal, df_with_indicators)
