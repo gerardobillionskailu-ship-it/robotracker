@@ -58,6 +58,12 @@ def fetch_stock_data_alphavantage(symbol: str, api_key: str) -> pd.DataFrame:
         ts = TimeSeries(key=api_key, output_format='pandas')
         data, meta_data = ts.get_daily(symbol=symbol, outputsize='full')
 
+        # Verificar si data está vacío (API error)
+        if data is None or data.empty:
+            st.error(f"⚠️ Alpha Vantage devolvió datos vacíos para {symbol}")
+            st.caption("Posible causa: Límite de API alcanzado o símbolo inválido")
+            return pd.DataFrame()
+
         # Mapeo de columnas Alpha Vantage → formato estándar
         df = data.rename(columns={
             '1. open': 'Open',
@@ -74,9 +80,15 @@ def fetch_stock_data_alphavantage(symbol: str, api_key: str) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
         df = df.ffill().bfill()
+
+        # Debugging: Mostrar info de éxito
+        st.success(f"✅ Datos cargados de Alpha Vantage: {len(df)} días para {symbol}")
+
         return df
 
     except Exception as e:
+        st.error(f"❌ Error en Alpha Vantage: {str(e)}")
+        st.caption(f"Símbolo: {symbol} | API Key: {'Configurada' if api_key else 'No configurada'}")
         return pd.DataFrame()
 
 
