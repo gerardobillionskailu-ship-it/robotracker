@@ -23,7 +23,7 @@ def render_ticker_selector(symbols):
     Renderiza selector de ticker horizontal deslizable (mobile-optimized)
     Barra de navegación tipo pills con scroll horizontal en mobile
     """
-    # CSS para scroll horizontal mobile-first
+    # CSS para scroll horizontal mobile-first (MEJORADO PARA IPHONE)
     st.markdown("""
     <style>
     /* Forzar contenedor horizontal scrollable en mobile */
@@ -31,35 +31,51 @@ def render_ticker_selector(symbols):
         display: flex !important;
         flex-wrap: nowrap !important;
         overflow-x: auto !important;
+        overflow-y: hidden !important;
         gap: 0.5rem !important;
-        padding: 0.5rem 0 !important;
+        padding: 0.5rem 0 10px 0 !important;
         -webkit-overflow-scrolling: touch !important;
-        scrollbar-width: thin !important;
+        scrollbar-width: none !important;  /* Firefox: ocultar scrollbar */
+        white-space: nowrap !important;
     }
 
-    /* Ocultar scrollbar en mobile pero permitir scroll */
+    /* Ocultar scrollbar completamente (Chrome, Safari, Edge) */
     div[data-testid="stHorizontalBlock"]::-webkit-scrollbar {
-        height: 3px;
+        height: 0px !important;
+        background: transparent !important;
+        display: none !important;
+    }
+
+    div[data-testid="stHorizontalBlock"]::-webkit-scrollbar-track {
+        background: transparent !important;
     }
 
     div[data-testid="stHorizontalBlock"]::-webkit-scrollbar-thumb {
-        background: rgba(255,255,255,0.3);
-        border-radius: 10px;
+        background: transparent !important;
     }
 
-    /* Botones de ticker no wrappean */
+    /* Botones de ticker no wrappean (CRÍTICO PARA MOBILE) */
     div[data-testid="stHorizontalBlock"] > div {
         flex-shrink: 0 !important;
+        flex-grow: 0 !important;
         min-width: 70px !important;
+        max-width: 90px !important;
     }
 
-    /* Estilo de píldoras */
+    /* Estilo de píldoras mejorado */
     div[data-testid="stHorizontalBlock"] button {
         font-weight: 600 !important;
         font-size: 14px !important;
         border-radius: 20px !important;
         padding: 8px 16px !important;
         white-space: nowrap !important;
+        width: 100% !important;
+        min-width: 70px !important;
+    }
+
+    /* Asegurar que el contenedor padre no colapsa */
+    .stHorizontalBlock {
+        overflow: visible !important;
     }
     </style>
     """, unsafe_allow_html=True)

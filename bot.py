@@ -101,9 +101,23 @@ def run_bot():
                 log_message(f"   ⚠️ Insuficiente historial ({len(bars)}). Saltando.")
                 continue
 
+            # ========== FILTRO DE CALIDAD: VOLUMEN ==========
+            # Calcular volumen promedio de los últimos 30 días
+            volumes = bars['volume']
+            avg_volume_30d = volumes.tail(30).mean()
+
+            # Umbral: 1 millón de acciones diarias
+            MIN_VOLUME_THRESHOLD = 1_000_000
+
+            if avg_volume_30d < MIN_VOLUME_THRESHOLD:
+                log_message(f"   ⏭️ VOLUMEN BAJO: Promedio {avg_volume_30d:,.0f} < {MIN_VOLUME_THRESHOLD:,}. Saltando.")
+                continue
+
             # Datos listos
             closes = bars['close']
             current_price = closes.iloc[-1]
+
+            log_message(f"   ✅ Volumen OK: Promedio {avg_volume_30d:,.0f} acciones/día")
 
             # Indicadores
             rsi = calcular_rsi(closes).iloc[-1]
