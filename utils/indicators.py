@@ -41,7 +41,7 @@ def generate_synthetic_data(symbol: str, days: int = 500) -> pd.DataFrame:
     df = pd.DataFrame(data, index=dates)
     df.index.name = 'Date'
     
-    # Simular patrones de Wyckoff (trampas y volumen)
+    # Simular patrones de Wyckoff
     for i in range(-10, 0):
         df.iloc[i, df.columns.get_loc('Close')] = df.iloc[i, df.columns.get_loc('High')] * 0.95
         df.iloc[i, df.columns.get_loc('Volume')] *= 1.8
@@ -49,21 +49,25 @@ def generate_synthetic_data(symbol: str, days: int = 500) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=3600)  # Cache 1h para no saturar Alpha Vantage (5 calls/min)
+@st.cache_data(ttl=3600)  # Cache 1h para no saturar Alpha Vantage
 def fetch_stock_data_alphavantage(symbol: str, api_key: str) -> pd.DataFrame:
-    """Descarga datos reales usando SOLO Alpha Vantage (sin yfinance)."""
+    """
+    Descarga datos reales usando SOLO Alpha Vantage.
+    Usa outputsize='compact' (100 días) para compatibilidad con FREE TIER.
+    """
     try:
         from alpha_vantage.timeseries import TimeSeries
 
         ts = TimeSeries(key=api_key, output_format='pandas')
-        data, meta_data = ts.get_daily(symbol=symbol, outputsize='full')
+        
+        # CAMBIO CRÍTICO: 'compact' es gratis (100 datos), 'full' es premium.
+        data, meta_data = ts.get_daily(symbol=symbol, outputsize='compact')
 
-        # Verificar si data está vacío (API error)
         if data is None or data.empty:
             st.error(f"⚠️ Alpha Vantage devolvió datos vacíos para {symbol}")
             return pd.DataFrame()
 
-        # Mapeo de columnas Alpha Vantage → formato estándar
+        # Mapeo de columnas
         df = data.rename(columns={
             '1. open': 'Open',
             '2. high': 'High',
@@ -73,55 +77,43 @@ def fetch_stock_data_alphavantage(symbol: str, api_key: str) -> pd.DataFrame:
         })
 
         df = df.sort_index()
-        df = df.tail(500)  # ~2 años
+        # No necesitamos tail() porque compact ya trae solo los últimos 100
 
         for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
         df = df.ffill().bfill()
         
-        # Debugging: Mostrar info de éxito solo si es necesario
-        # st.success(f"✅ Datos cargados de Alpha Vantage: {len(df)} días para {symbol}")
-
         return df
 
     except Exception as e:
-        st.error(f"❌ Error en Alpha Vantage: {str(e)}")
+        # Mensaje amigable si falla por límites de API
+        if "premium" in str(e).lower() or "call frequency" in str(e).lower():
+            st.warning(f"⚠️ Límite de API Alpha Vantage alcanzado para {symbol}. Espera 1 minuto.")
+        else:
+            st.error(f"❌ Error en Alpha Vantage: {str(e)}")
         return pd.DataFrame()
 
 
 def fetch_stock_data(symbol: str, period: str = "2y") -> pd.DataFrame:
-    """
-    Wrapper principal. Intenta usar Alpha Vantage desde secrets.
-    Si no hay API key o falla, retorna DataFrame vacío (que activará el modo simulación en app.py).
-    YA NO USA YFINANCE.
-    """
+    """Wrapper principal. Intenta usar Alpha Vantage desde secrets."""
     try:
         api_key = st.secrets.get("ALPHAVANTAGE_API_KEY", "")
         if api_key:
             return fetch_stock_data_alphavantage(symbol, api_key)
         else:
-            return pd.DataFrame() # Esto forzará la simulación o el error controlado
+            return pd.DataFrame()
     except Exception:
         return pd.DataFrame()
 
 
 class TechnicalIndicators:
-    """
-    Clase base para calcular indicadores técnicos.
-    Soporta múltiples estrategias de análisis.
-    """
+    """Clase base para calcular indicadores técnicos."""
 
     def __init__(self, df: pd.DataFrame):
-        """
-        Inicializa el analizador de indicadores.
-        Args:
-            df: DataFrame con datos OHLCV (Open, High, Low, Close, Volume)
-        """
         self.df = df.copy()
 
     def calculate_all_indicators(self) -> pd.DataFrame:
-        """Calcula todos los indicadores disponibles."""
         self.calculate_larry_williams()
         self.calculate_wyckoff_metrics()
         return self.df
@@ -130,7 +122,6 @@ class TechnicalIndicators:
 
     def calculate_larry_williams(self) -> pd.DataFrame:
         """Implementa la estrategia de Larry Williams."""
-        # Williams %R (período 14)
         period = 14
         highest_high = self.df['High'].rolling(window=period).max()
         lowest_low = self.df['Low'].rolling(window=period).min()
@@ -139,76 +130,74 @@ class TechnicalIndicators:
             (highest_high - self.df['Close']) / (highest_high - lowest_low)
         )
 
-        # Señales de Williams %R
         self.df['williams_oversold'] = self.df['williams_r'] < -80
         self.df['williams_overbought'] = self.df['williams_r'] > -20
 
-        # Medias Móviles (Larry Williams setup clásico)
-        self.df['sma_20'] = self.df['Close'].rolling(window=20).mean()      # ~1 mes
-        self.df['sma_50'] = self.df['Close'].rolling(window=50).mean()      # ~10 semanas
-        self.df['sma_65'] = self.df['Close'].rolling(window=65).mean()      # 13 semanas
-        self.df['sma_200'] = self.df['Close'].rolling(window=200).mean()    # ~40 semanas
-        self.df['sma_250'] = self.df['Close'].rolling(window=250).mean()    # 50 semanas
+        # Medias Móviles
+        # NOTA: SMA 200 y 250 serán NaN con Free Tier (solo 100 datos)
+        self.df['sma_20'] = self.df['Close'].rolling(window=20).mean()
+        self.df['sma_50'] = self.df['Close'].rolling(window=50).mean()
+        self.df['sma_65'] = self.df['Close'].rolling(window=65).mean()
+        self.df['sma_200'] = self.df['Close'].rolling(window=200).mean()
+        self.df['sma_250'] = self.df['Close'].rolling(window=250).mean()
 
-        # Cruces de Medias
-        self.df['golden_cross'] = (
-            (self.df['sma_50'] > self.df['sma_200']) &
-            (self.df['sma_50'].shift(1) <= self.df['sma_200'].shift(1))
-        )
-        self.df['death_cross'] = (
-            (self.df['sma_50'] < self.df['sma_200']) &
-            (self.df['sma_50'].shift(1) >= self.df['sma_200'].shift(1))
-        )
+        # Cruces (manejo de errores si SMA 200 es NaN)
+        self.df['golden_cross'] = False
+        self.df['death_cross'] = False
+        
+        if len(self.df) >= 200:
+             self.df['golden_cross'] = (
+                (self.df['sma_50'] > self.df['sma_200']) &
+                (self.df['sma_50'].shift(1) <= self.df['sma_200'].shift(1))
+            )
+             self.df['death_cross'] = (
+                (self.df['sma_50'] < self.df['sma_200']) &
+                (self.df['sma_50'].shift(1) >= self.df['sma_200'].shift(1))
+            )
 
         return self.df
 
     def get_larry_williams_signal(self) -> Dict[str, any]:
-        """Genera señal de trading basada en Larry Williams."""
         if self.df.empty:
             return {'signal': 'HOLD', 'strength': 0, 'reasons': ['Datos insuficientes'], 'suggested_strategy': 'Esperar'}
 
         latest = self.df.iloc[-1]
         reasons = []
-        strength = 50  # Neutral
+        strength = 50
         signal = 'HOLD'
 
         # Análisis Williams %R
         if latest['williams_oversold']:
-            reasons.append("Williams %R en sobreventa (oportunidad de compra)")
+            reasons.append("Williams %R en sobreventa (posible rebote)")
             strength += 20
             signal = 'BUY'
         elif latest['williams_overbought']:
-            reasons.append("Williams %R en sobrecompra (considerar venta)")
+            reasons.append("Williams %R en sobrecompra")
             strength -= 20
             signal = 'SELL'
 
-        # Análisis de Medias Móviles
-        if latest['Close'] > latest['sma_20'] > latest['sma_50']:
-            reasons.append("Precio sobre SMA 20 y 50 (tendencia alcista)")
-            strength += 15
-            if signal != 'SELL':
-                signal = 'BUY'
-        elif latest['Close'] < latest['sma_20'] < latest['sma_50']:
-            reasons.append("Precio bajo SMA 20 y 50 (tendencia bajista)")
-            strength -= 15
+        # Análisis de Medias (Solo si existen datos)
+        if pd.notna(latest['sma_20']) and pd.notna(latest['sma_50']):
+            if latest['Close'] > latest['sma_20'] > latest['sma_50']:
+                reasons.append("Tendencia alcista corto plazo (Precio > SMA20 > SMA50)")
+                strength += 15
+                if signal != 'SELL': signal = 'BUY'
+            elif latest['Close'] < latest['sma_20'] < latest['sma_50']:
+                reasons.append("Tendencia bajista corto plazo")
+                strength -= 15
 
-        # Golden/Death Cross
-        if latest['golden_cross']:
-            reasons.append("¡Golden Cross detectado! (SMA 50 cruzó SMA 200)")
+        # Golden Cross (Solo si SMA 200 existe)
+        if latest.get('golden_cross', False):
+            reasons.append("Golden Cross (SMA 50 > SMA 200)")
             strength += 25
             signal = 'BUY'
-        elif latest['death_cross']:
-            reasons.append("Death Cross detectado (SMA 50 bajó de SMA 200)")
-            strength -= 25
-            signal = 'SELL'
 
-        # Estrategia para cuenta Cash
         if signal == 'BUY':
-            suggested_strategy = "Long Call (compra directa de opciones Call) o compra de acciones"
+            suggested_strategy = "Long Call (Momentum alcista detectado)"
         elif signal == 'SELL':
-            suggested_strategy = "Mantenerse en efectivo o considerar salir de posiciones existentes"
+            suggested_strategy = "Cerrar posiciones / Cash"
         else:
-            suggested_strategy = "Esperar mejor punto de entrada"
+            suggested_strategy = "Esperar confirmación"
 
         return {
             'signal': signal,
@@ -221,41 +210,21 @@ class TechnicalIndicators:
     # ========== WYCKOFF LITE STRATEGY ==========
 
     def calculate_wyckoff_metrics(self) -> pd.DataFrame:
-        """Implementa métricas básicas del método Wyckoff."""
-        # Volumen promedio (20 períodos)
         self.df['volume_avg'] = self.df['Volume'].rolling(window=20).mean()
-
-        # Volumen relativo (actual vs promedio)
-        self.df['volume_relative'] = (
-            self.df['Volume'] / self.df['volume_avg']
-        ) * 100
-
-        # Volumen alto (> 150% del promedio)
+        self.df['volume_relative'] = (self.df['Volume'] / self.df['volume_avg']) * 100
         self.df['high_volume'] = self.df['volume_relative'] > 150
 
-        # Posición del cierre en la vela (0-100%)
         range_hl = self.df['High'] - self.df['Low']
         range_hl = range_hl.replace(0, np.nan) 
 
-        self.df['close_position'] = (
-            (self.df['Close'] - self.df['Low']) / range_hl
-        ) * 100
+        self.df['close_position'] = ((self.df['Close'] - self.df['Low']) / range_hl) * 100
 
-        # Fortaleza de la vela
-        self.df['bullish_strength'] = (
-            (self.df['high_volume']) &
-            (self.df['close_position'] > 70)
-        )
-        self.df['bearish_weakness'] = (
-            (self.df['high_volume']) &
-            (self.df['close_position'] < 30)
-        )
+        self.df['bullish_strength'] = (self.df['high_volume']) & (self.df['close_position'] > 70)
+        self.df['bearish_weakness'] = (self.df['high_volume']) & (self.df['close_position'] < 30)
 
-        # Spread (rango de la vela)
         self.df['spread'] = self.df['High'] - self.df['Low']
         self.df['spread_avg'] = self.df['spread'].rolling(window=20).mean()
 
-        # Esfuerzo vs Resultado (principio Wyckoff)
         self.df['effort_result_anomaly'] = (
             (self.df['volume_relative'] > 150) &
             (self.df['spread'] < self.df['spread_avg'] * 0.7)
@@ -264,53 +233,36 @@ class TechnicalIndicators:
         return self.df
 
     def get_wyckoff_signal(self) -> Dict[str, any]:
-        """Genera señal de trading basada en Wyckoff."""
         if self.df.empty:
-            return {'signal': 'HOLD', 'strength': 0, 'reasons': ['Datos insuficientes'], 'suggested_strategy': 'Esperar'}
+            return {'signal': 'HOLD', 'strength': 0, 'reasons': [], 'suggested_strategy': ''}
             
         latest = self.df.iloc[-1]
-        recent = self.df.tail(5)
-
         reasons = []
         strength = 50
         signal = 'HOLD'
 
-        # Análisis de volumen
         if latest['high_volume']:
-            reasons.append(f"Volumen alto detectado ({latest['volume_relative']:.0f}% del promedio)")
+            reasons.append(f"Volumen alto ({latest['volume_relative']:.0f}% del promedio)")
 
-        # Análisis de fortaleza/debilidad
         if latest['bullish_strength']:
-            reasons.append("Fortaleza alcista: Volumen alto + cierre en máximos")
+            reasons.append("Fortaleza (Volumen alto + Cierre alto)")
             strength += 25
             signal = 'BUY'
         elif latest['bearish_weakness']:
-            reasons.append("Debilidad bajista: Volumen alto + cierre en mínimos")
+            reasons.append("Debilidad (Volumen alto + Cierre bajo)")
             strength -= 25
             signal = 'SELL'
 
-        # Posición del cierre
-        if latest['close_position'] > 75:
-            reasons.append(f"Cierre en zona alta de la vela ({latest['close_position']:.0f}%)")
-            strength += 10
-            if signal != 'SELL':
-                signal = 'BUY'
-        elif latest['close_position'] < 25:
-            reasons.append(f"Cierre en zona baja de la vela ({latest['close_position']:.0f}%)")
-            strength -= 10
-
-        # Anomalía esfuerzo-resultado
         if latest['effort_result_anomaly']:
-            reasons.append("Anomalía Wyckoff: Alto volumen con poco movimiento (posible reversión)")
+            reasons.append("Anomalía Wyckoff (Mucho volumen, poco movimiento)")
             strength += 15
 
-        # Estrategia para cuenta Cash
         if signal == 'BUY':
-            suggested_strategy = "Long Call o compra de acciones (detectada posible acumulación)"
+            suggested_strategy = "Acumulación detectada -> Long Call"
         elif signal == 'SELL':
-            suggested_strategy = "Mantenerse líquido (posible distribución en curso)"
+            suggested_strategy = "Distribución detectada -> Cash"
         else:
-            suggested_strategy = "Esperar confirmación de acumulación/distribución"
+            suggested_strategy = "Esperar definición"
 
         return {
             'signal': signal,
@@ -324,7 +276,6 @@ class TechnicalIndicators:
 # ========== FUNCIONES AUXILIARES ==========
 
 def get_support_resistance(df: pd.DataFrame, window: int = 20) -> Tuple[float, float]:
-    """Calcula niveles de soporte y resistencia básicos."""
     recent_data = df.tail(window)
     support = recent_data['Low'].min()
     resistance = recent_data['High'].max()
