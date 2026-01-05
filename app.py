@@ -104,14 +104,62 @@ def render_sidebar():
 
             st.markdown("---")
 
-            # Watchlist Editable
-            st.subheader("📊 Watchlist Personalizada")
-            watchlist_symbols = st.multiselect(
-                "Edita tus símbolos:",
-                options=["CVX", "SLB", "HAL", "XLE", "AAPL", "MSFT", "GOOGL", "TSLA", "SPY", "QQQ"],
-                default=["CVX", "SLB", "HAL", "XLE"],
-                help="Selecciona los tickers que quieres monitorear"
+            # Sistema de Listas Temáticas
+            st.subheader("📂 Listas Temáticas")
+
+            # Inicializar lista personal en session_state
+            if 'personal_watchlist' not in st.session_state:
+                st.session_state['personal_watchlist'] = ["AAPL", "MSFT"]
+
+            # Selectbox para elegir tema
+            theme_choice = st.selectbox(
+                "Selecciona un Tema:",
+                options=[
+                    "🇻🇪 Venezuela Recovery",
+                    "🚀 Tech & Growth",
+                    "⭐ Mi Lista Personal"
+                ],
+                index=0,
+                help="Elige una lista temática pre-configurada o crea tu propia lista"
             )
+
+            # Asignar símbolos según el tema elegido
+            if theme_choice == "🇻🇪 Venezuela Recovery":
+                watchlist_symbols = ["BKR", "WFRD", "COP", "VLO", "CVX", "SLB"]
+            elif theme_choice == "🚀 Tech & Growth":
+                watchlist_symbols = ["NVDA", "META", "TSLA", "AMD", "COIN"]
+            else:  # Mi Lista Personal
+                watchlist_symbols = st.session_state['personal_watchlist']
+
+                # Mostrar input para agregar tickers solo en lista personal
+                st.caption("🎯 Gestiona tu lista personal:")
+                col_input, col_btn = st.columns([3, 1])
+
+                with col_input:
+                    new_ticker = st.text_input(
+                        "Agregar ticker:",
+                        placeholder="Ej: NVDA",
+                        label_visibility="collapsed",
+                        key="add_ticker_input"
+                    )
+
+                with col_btn:
+                    if st.button("➕", key="add_ticker_btn", use_container_width=True):
+                        if new_ticker and new_ticker.strip().upper() not in st.session_state['personal_watchlist']:
+                            st.session_state['personal_watchlist'].append(new_ticker.strip().upper())
+                            st.rerun()
+
+                # Mostrar lista actual con opción de eliminar
+                if st.session_state['personal_watchlist']:
+                    st.caption("📋 Tickers actuales:")
+                    for ticker in st.session_state['personal_watchlist']:
+                        col1, col2 = st.columns([4, 1])
+                        with col1:
+                            st.text(f"• {ticker}")
+                        with col2:
+                            if st.button("🗑️", key=f"remove_{ticker}", use_container_width=True):
+                                st.session_state['personal_watchlist'].remove(ticker)
+                                st.rerun()
 
             # Modo Geopolítico (Venezuela)
             geopolitical_mode = st.toggle(
@@ -182,24 +230,6 @@ def main():
             render_guide()
 
         else:  # Dashboard
-            # Header principal
-            st.title("📈 TradeOlympo - Análisis Financiero Avanzado")
-            st.markdown("*Estrategias inteligentes para cuentas Cash*")
-
-            # Mensaje de bienvenida (solo primera vez)
-            if 'first_load' not in st.session_state:
-                st.session_state['first_load'] = True
-                mode_text = "🎮 Simulación" if simulation_mode else "Visión Doble (Larry + Wyckoff)"
-                ticker_text = f" analizando **{custom_ticker}**" if custom_ticker else ""
-                st.info(f"""
-                ¡Bienvenido a TradeOlympo!
-
-                Modo: **{mode_text}**{ticker_text}
-                Selecciona un símbolo en el Watchlist para ver ambas estrategias.
-                """)
-
-            st.markdown("---")
-
             # Obtener API key de secrets de forma segura
             try:
                 api_key = st.secrets.get("ALPHAVANTAGE_API_KEY", "")
