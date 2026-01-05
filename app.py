@@ -87,22 +87,30 @@ def render_sidebar():
             help="Ingresa un ticker personalizado para analizar. Deja vacío para usar watchlist."
         )
 
-        # Modo Simulación
+        # Alpha Vantage API Key - Usando Streamlit Secrets (Seguro)
+        st.subheader("🔑 API de Datos Reales")
+
+        # Intentar cargar API Key desde secrets
+        try:
+            api_key = st.secrets.get("ALPHAVANTAGE_API_KEY", "")
+            if api_key:
+                st.success("✅ API Key cargada")
+            else:
+                st.warning("⚠️ Sin API Key (Usando Simulación)")
+        except Exception:
+            # Si no hay secrets configurados (desarrollo local)
+            api_key = ""
+
+        # Modo Simulación (automático si no hay API key)
         simulation_mode = st.toggle(
             "🎮 Modo Simulación",
-            value=False,
-            help="""
-            Genera datos sintéticos alcistas simulando un rally por cambio de régimen en Venezuela.
-            Útil cuando yfinance API está bloqueada o para demos.
-            """
+            value=(not bool(api_key)),  # Activado si no hay API key
+            help="Genera datos sintéticos si no hay conexión API."
         )
-
-        if simulation_mode:
-            st.warning("⚡ Modo Simulación Activo: Usando datos sintéticos")
 
         st.markdown("---")
 
-        # Watchlist Editable
+        # Watchlist Editable (Universal)
         st.subheader("📊 Watchlist Personalizada")
         watchlist_symbols = st.multiselect(
             "Edita tus símbolos:",
@@ -115,7 +123,7 @@ def render_sidebar():
         geopolitical_mode = st.toggle(
             "🌎 Modo Geopolítico (Venezuela)",
             value=True,
-            help="Muestra alertas sobre Maduro y análisis petrolero venezolano"
+            help="Muestra alertas sobre Maduro y análisis petrolero venezolano. Apagar para ver solo técnico."
         )
 
         st.markdown("---")
@@ -131,46 +139,14 @@ def render_sidebar():
         with st.expander("ℹ️ Acerca de"):
             st.markdown("""
             **TradeOlympo v1.0**
-
-            Aplicación de análisis financiero que combina:
-            - Indicadores técnicos avanzados
-            - Análisis de volumen Wyckoff
-            - Noticias en tiempo real
-            - Sugerencias de estrategias Cash
-
-            **Stack Tecnológico:**
-            - Streamlit
-            - Alpha Vantage (API de datos reales)
-            - Plotly
-            - Pandas & NumPy
+            Stack: Streamlit | Alpha Vantage | Plotly
             """)
-
-        with st.expander("📖 Guía de Uso"):
-            st.markdown("""
-            **Cómo usar TradeOlympo:**
-
-            1. **Selecciona tu estrategia** en el sidebar
-            2. **Elige un símbolo** en el Watchlist
-            3. **Revisa la señal** en la tarjeta central
-            4. **Analiza el gráfico** interactivo
-            5. **Lee las noticias** relacionadas
-
-            **Interpretación de Señales:**
-            - 🟢 **BUY**: Oportunidad de compra
-            - 🔴 **SELL**: Considerar venta o esperar
-            - 🟡 **HOLD**: Sin señal clara
-
-            **Estrategias Cash:**
-            - Long Call: Compra de opciones Call
-            - Compra de Acciones: Compra directa
-            """)
-
-        st.markdown("---")
 
         # Footer
         st.caption(f"© 2024 TradeOlympo | {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
-    return strategy_mode, custom_ticker, simulation_mode, watchlist_symbols, geopolitical_mode
+    # Retornamos TODAS las variables necesarias
+    return strategy_mode, custom_ticker, simulation_mode, api_key, watchlist_symbols, geopolitical_mode
 
 
 # ========== FUNCIÓN PRINCIPAL ==========
@@ -185,42 +161,35 @@ def main():
         st.title("📈 TradeOlympo - Análisis Financiero Avanzado")
         st.markdown("*Estrategias inteligentes para cuentas Cash*")
 
-        # Renderizar sidebar y obtener configuración
-        strategy_mode, custom_ticker, simulation_mode, watchlist_symbols, geopolitical_mode = render_sidebar()
+        # Renderizar sidebar y obtener TODAS las configuraciones
+        strategy_mode, custom_ticker, simulation_mode, api_key, watchlist_symbols, geopolitical_mode = render_sidebar()
 
         # Mensaje de bienvenida (solo primera vez)
         if 'first_load' not in st.session_state:
             st.session_state['first_load'] = True
             mode_text = "🎮 Simulación" if simulation_mode else strategy_mode
             ticker_text = f" analizando **{custom_ticker}**" if custom_ticker else ""
-            st.info(f"""
-            ¡Bienvenido a TradeOlympo!
-
-            Modo: **{mode_text}**{ticker_text}
-            Selecciona un símbolo en el Watchlist para comenzar el análisis.
-            """)
+            st.info(f"Bienvenido a TradeOlympo! Modo: **{mode_text}**{ticker_text}")
 
         st.markdown("---")
 
-        # Renderizar dashboard principal
-        render_dashboard(strategy_mode, custom_ticker, simulation_mode, watchlist_symbols, geopolitical_mode)
+        # Renderizar dashboard principal pasando TODOS los argumentos
+        # IMPORTANTE: render_dashboard en views/dashboard.py debe aceptar estos argumentos
+        render_dashboard(
+            strategy_mode, 
+            custom_ticker, 
+            simulation_mode, 
+            api_key, 
+            watchlist_symbols, 
+            geopolitical_mode
+        )
 
     except Exception as e:
         # Manejo elegante de errores
         st.error("❌ Ocurrió un error inesperado")
-
         with st.expander("🔍 Ver detalles del error"):
             st.code(traceback.format_exc())
-
-        st.warning("""
-        **Posibles soluciones:**
-        - Verifica tu conexión a Internet
-        - Intenta seleccionar otro símbolo
-        - Recarga la página (F5)
-        - Revisa que los paquetes estén instalados correctamente
-        """)
-
-        # Botón para recargar
+        
         if st.button("🔄 Recargar Aplicación"):
             st.rerun()
 

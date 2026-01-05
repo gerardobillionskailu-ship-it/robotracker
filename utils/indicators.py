@@ -7,15 +7,14 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Tuple
 import streamlit as st
-
+from datetime import datetime, timedelta
 
 # ========== FUNCIONES DE DESCARGA ROBUSTA ==========
 
 @st.cache_data(ttl=3600)  # Cache por 1 hora
 def generate_synthetic_data(symbol: str, days: int = 500) -> pd.DataFrame:
     """Genera datos sintéticos alcistas simulando el 'Rally por cambio de régimen en Venezuela'."""
-    from datetime import datetime, timedelta
-
+    
     base_prices = {'CVX': 150, 'SLB': 50, 'HAL': 35, 'XLE': 80}
     base_price = base_prices.get(symbol, 100)
     end_date = datetime.now()
@@ -32,16 +31,17 @@ def generate_synthetic_data(symbol: str, days: int = 500) -> pd.DataFrame:
         high = close + np.random.uniform(0, daily_range)
         low = close - np.random.uniform(0, daily_range)
         open_price = close * 0.99 if i == 0 else close_prices[i-1] * (1 + np.random.uniform(-0.01, 0.01))
-
+        
         base_volume = 5_000_000
         volume_spike = 1 if np.random.random() > 0.85 else 0
         volume = base_volume * (1 + volume_spike * 2) * (1 + np.random.uniform(-0.3, 0.5))
-
+        
         data.append({'Open': open_price, 'High': high, 'Low': low, 'Close': close, 'Volume': int(volume)})
 
     df = pd.DataFrame(data, index=dates)
     df.index.name = 'Date'
-
+    
+    # Simular patrones de Wyckoff (trampas y volumen)
     for i in range(-10, 0):
         df.iloc[i, df.columns.get_loc('Close')] = df.iloc[i, df.columns.get_loc('High')] * 0.95
         df.iloc[i, df.columns.get_loc('Volume')] *= 1.8
@@ -61,7 +61,6 @@ def fetch_stock_data_alphavantage(symbol: str, api_key: str) -> pd.DataFrame:
         # Verificar si data está vacío (API error)
         if data is None or data.empty:
             st.error(f"⚠️ Alpha Vantage devolvió datos vacíos para {symbol}")
-            st.caption("Posible causa: Límite de API alcanzado o símbolo inválido")
             return pd.DataFrame()
 
         # Mapeo de columnas Alpha Vantage → formato estándar
@@ -80,28 +79,29 @@ def fetch_stock_data_alphavantage(symbol: str, api_key: str) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
         df = df.ffill().bfill()
-
-        # Debugging: Mostrar info de éxito
-        st.success(f"✅ Datos cargados de Alpha Vantage: {len(df)} días para {symbol}")
+        
+        # Debugging: Mostrar info de éxito solo si es necesario
+        # st.success(f"✅ Datos cargados de Alpha Vantage: {len(df)} días para {symbol}")
 
         return df
 
     except Exception as e:
         st.error(f"❌ Error en Alpha Vantage: {str(e)}")
-        st.caption(f"Símbolo: {symbol} | API Key: {'Configurada' if api_key else 'No configurada'}")
         return pd.DataFrame()
 
 
 def fetch_stock_data(symbol: str, period: str = "2y") -> pd.DataFrame:
     """
-    Wrapper que usa Alpha Vantage desde secrets.
-    Si no hay API key, retorna DataFrame vacío (forzará modo simulación).
+    Wrapper principal. Intenta usar Alpha Vantage desde secrets.
+    Si no hay API key o falla, retorna DataFrame vacío (que activará el modo simulación en app.py).
+    YA NO USA YFINANCE.
     """
     try:
         api_key = st.secrets.get("ALPHAVANTAGE_API_KEY", "")
-        if not api_key:
-            return pd.DataFrame()
-        return fetch_stock_data_alphavantage(symbol, api_key)
+        if api_key:
+            return fetch_stock_data_alphavantage(symbol, api_key)
+        else:
+            return pd.DataFrame() # Esto forzará la simulación o el error controlado
     except Exception:
         return pd.DataFrame()
 
@@ -115,44 +115,21 @@ class TechnicalIndicators:
     def __init__(self, df: pd.DataFrame):
         """
         Inicializa el analizador de indicadores.
-
         Args:
             df: DataFrame con datos OHLCV (Open, High, Low, Close, Volume)
         """
         self.df = df.copy()
 
     def calculate_all_indicators(self) -> pd.DataFrame:
-        """
-        Calcula todos los indicadores disponibles.
-
-        Returns:
-            DataFrame con indicadores calculados
-        """
+        """Calcula todos los indicadores disponibles."""
         self.calculate_larry_williams()
         self.calculate_wyckoff_metrics()
-        # PRÓXIMOS INDICADORES:
-        # - RSI (Relative Strength Index)
-        # - MACD (Moving Average Convergence Divergence)
-        # - Bandas de Bollinger
-        # - Fibonacci Retracements
-
         return self.df
 
     # ========== LARRY WILLIAMS STRATEGY ==========
 
     def calculate_larry_williams(self) -> pd.DataFrame:
-        """
-        Implementa la estrategia de Larry Williams.
-
-        Componentes:
-        1. Williams %R: Indicador de momentum (-100 a 0)
-           - Sobrecompra: %R > -20
-           - Sobreventa: %R < -80
-        2. Medias Móviles: Detección de tendencias
-
-        Returns:
-            DataFrame con indicadores Williams calculados
-        """
+        """Implementa la estrategia de Larry Williams."""
         # Williams %R (período 14)
         period = 14
         highest_high = self.df['High'].rolling(window=period).max()
@@ -166,12 +143,14 @@ class TechnicalIndicators:
         self.df['williams_oversold'] = self.df['williams_r'] < -80
         self.df['williams_overbought'] = self.df['williams_r'] > -20
 
-        # Medias Móviles
-        self.df['sma_20'] = self.df['Close'].rolling(window=20).mean()
-        self.df['sma_50'] = self.df['Close'].rolling(window=50).mean()
-        self.df['sma_200'] = self.df['Close'].rolling(window=200).mean()
+        # Medias Móviles (Larry Williams setup clásico)
+        self.df['sma_20'] = self.df['Close'].rolling(window=20).mean()      # ~1 mes
+        self.df['sma_50'] = self.df['Close'].rolling(window=50).mean()      # ~10 semanas
+        self.df['sma_65'] = self.df['Close'].rolling(window=65).mean()      # 13 semanas
+        self.df['sma_200'] = self.df['Close'].rolling(window=200).mean()    # ~40 semanas
+        self.df['sma_250'] = self.df['Close'].rolling(window=250).mean()    # 50 semanas
 
-        # Cruces de Medias (Golden Cross / Death Cross)
+        # Cruces de Medias
         self.df['golden_cross'] = (
             (self.df['sma_50'] > self.df['sma_200']) &
             (self.df['sma_50'].shift(1) <= self.df['sma_200'].shift(1))
@@ -184,16 +163,10 @@ class TechnicalIndicators:
         return self.df
 
     def get_larry_williams_signal(self) -> Dict[str, any]:
-        """
-        Genera señal de trading basada en Larry Williams.
+        """Genera señal de trading basada en Larry Williams."""
+        if self.df.empty:
+            return {'signal': 'HOLD', 'strength': 0, 'reasons': ['Datos insuficientes'], 'suggested_strategy': 'Esperar'}
 
-        Returns:
-            Dict con:
-                - signal: 'BUY', 'SELL', 'HOLD'
-                - strength: 0-100 (confianza de la señal)
-                - reasons: Lista de razones
-                - suggested_strategy: Estrategia recomendada para cuenta Cash
-        """
         latest = self.df.iloc[-1]
         reasons = []
         strength = 50  # Neutral
@@ -242,23 +215,13 @@ class TechnicalIndicators:
             'strength': max(0, min(100, strength)),
             'reasons': reasons,
             'suggested_strategy': suggested_strategy,
-            'williams_r': latest['williams_r']
+            'williams_r': latest.get('williams_r', 0)
         }
 
     # ========== WYCKOFF LITE STRATEGY ==========
 
     def calculate_wyckoff_metrics(self) -> pd.DataFrame:
-        """
-        Implementa métricas básicas del método Wyckoff.
-
-        Enfoque en:
-        1. Análisis de Volumen (oferta/demanda)
-        2. Posición del cierre en la vela (fuerza/debilidad)
-        3. Detección de acumulación/distribución
-
-        Returns:
-            DataFrame con métricas Wyckoff calculadas
-        """
+        """Implementa métricas básicas del método Wyckoff."""
         # Volumen promedio (20 períodos)
         self.df['volume_avg'] = self.df['Volume'].rolling(window=20).mean()
 
@@ -271,17 +234,14 @@ class TechnicalIndicators:
         self.df['high_volume'] = self.df['volume_relative'] > 150
 
         # Posición del cierre en la vela (0-100%)
-        # 100% = cierre en máximo, 0% = cierre en mínimo
         range_hl = self.df['High'] - self.df['Low']
-        range_hl = range_hl.replace(0, np.nan)  # Evitar división por 0
+        range_hl = range_hl.replace(0, np.nan) 
 
         self.df['close_position'] = (
             (self.df['Close'] - self.df['Low']) / range_hl
         ) * 100
 
         # Fortaleza de la vela
-        # Volumen alto + cierre en la parte alta = Fortaleza (acumulación)
-        # Volumen alto + cierre en la parte baja = Debilidad (distribución)
         self.df['bullish_strength'] = (
             (self.df['high_volume']) &
             (self.df['close_position'] > 70)
@@ -296,7 +256,6 @@ class TechnicalIndicators:
         self.df['spread_avg'] = self.df['spread'].rolling(window=20).mean()
 
         # Esfuerzo vs Resultado (principio Wyckoff)
-        # Volumen alto con spread pequeño = posible reversión
         self.df['effort_result_anomaly'] = (
             (self.df['volume_relative'] > 150) &
             (self.df['spread'] < self.df['spread_avg'] * 0.7)
@@ -305,14 +264,12 @@ class TechnicalIndicators:
         return self.df
 
     def get_wyckoff_signal(self) -> Dict[str, any]:
-        """
-        Genera señal de trading basada en Wyckoff.
-
-        Returns:
-            Dict con señal, fuerza, razones y estrategia
-        """
+        """Genera señal de trading basada en Wyckoff."""
+        if self.df.empty:
+            return {'signal': 'HOLD', 'strength': 0, 'reasons': ['Datos insuficientes'], 'suggested_strategy': 'Esperar'}
+            
         latest = self.df.iloc[-1]
-        recent = self.df.tail(5)  # Últimas 5 velas
+        recent = self.df.tail(5)
 
         reasons = []
         strength = 50
@@ -347,16 +304,6 @@ class TechnicalIndicators:
             reasons.append("Anomalía Wyckoff: Alto volumen con poco movimiento (posible reversión)")
             strength += 15
 
-        # Patrones de acumulación (múltiples velas con fortaleza)
-        if recent['bullish_strength'].sum() >= 3:
-            reasons.append("Patrón de acumulación detectado (3+ velas con fortaleza)")
-            strength += 20
-            signal = 'BUY'
-        elif recent['bearish_weakness'].sum() >= 3:
-            reasons.append("Patrón de distribución detectado (3+ velas con debilidad)")
-            strength -= 20
-            signal = 'SELL'
-
         # Estrategia para cuenta Cash
         if signal == 'BUY':
             suggested_strategy = "Long Call o compra de acciones (detectada posible acumulación)"
@@ -370,35 +317,15 @@ class TechnicalIndicators:
             'strength': max(0, min(100, strength)),
             'reasons': reasons,
             'suggested_strategy': suggested_strategy,
-            'volume_relative': latest['volume_relative'],
-            'close_position': latest['close_position']
+            'volume_relative': latest.get('volume_relative', 0),
+            'close_position': latest.get('close_position', 50)
         }
-
 
 # ========== FUNCIONES AUXILIARES ==========
 
 def get_support_resistance(df: pd.DataFrame, window: int = 20) -> Tuple[float, float]:
-    """
-    Calcula niveles de soporte y resistencia básicos.
-
-    Args:
-        df: DataFrame con datos OHLCV
-        window: Ventana para cálculo de niveles
-
-    Returns:
-        Tuple (soporte, resistencia)
-    """
+    """Calcula niveles de soporte y resistencia básicos."""
     recent_data = df.tail(window)
     support = recent_data['Low'].min()
     resistance = recent_data['High'].max()
-
     return support, resistance
-
-
-# PRÓXIMAS FUNCIONES A IMPLEMENTAR:
-# - calculate_rsi(): Índice de Fuerza Relativa
-# - calculate_macd(): MACD y señal
-# - calculate_bollinger_bands(): Bandas de Bollinger
-# - detect_chart_patterns(): Detección de patrones (cabeza y hombros, triángulos, etc.)
-# - calculate_fibonacci_levels(): Niveles de retroceso de Fibonacci
-# - volume_profile(): Perfil de volumen por precio
