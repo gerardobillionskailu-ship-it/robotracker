@@ -75,6 +75,7 @@ def render_dual_strategy_card(custom_ticker: str = "", simulation_mode: bool = F
     """
     Renderiza VISIÓN DOBLE: Larry Williams y Wyckoff simultáneamente.
     Incluye cálculo de Strike Ideal con tarjeta prominente.
+    MOBILE-FIRST: Lo importante arriba, detalles en expander.
     """
     st.header("🎯 Panel de Control Unificado")
 
@@ -128,51 +129,93 @@ def render_dual_strategy_card(custom_ticker: str = "", simulation_mode: bool = F
         wyckoff_signal = indicators.get_wyckoff_signal()
 
         current_price = df_with_indicators['Close'].iloc[-1]
-
-        # ========== STRIKE IDEAL (Tarjeta prominente) ==========
         strike_ideal = calculate_optimal_strike(current_price)
 
+        # ========== JERARQUÍA VISUAL: ESTADO PRINCIPAL (SIEMPRE VISIBLE) ==========
+
         # Determinar si mostrar strike (si AL MENOS una estrategia dice BUY con >50% confianza)
-        show_strike = (
+        show_buy_signal = (
             (larry_signal['signal'] == 'BUY' and larry_signal['strength'] >= 50) or
             (wyckoff_signal['signal'] == 'BUY' and wyckoff_signal['strength'] >= 50)
         )
 
-        if show_strike:
+        if show_buy_signal:
+            # ✅ TARJETA VERDE: COMPRA
             st.markdown(f"""
             <div style="background: linear-gradient(135deg, #00FF88 0%, #00D975 100%);
-                        padding: 25px;
-                        border-radius: 12px;
+                        padding: 30px;
+                        border-radius: 15px;
                         text-align: center;
                         margin: 20px 0;
-                        box-shadow: 0 6px 20px rgba(0,255,136,0.4);
-                        border: 2px solid #00FF88;">
-                <h2 style="margin:0; color: #000; font-size: 28px; font-weight: bold;">
+                        box-shadow: 0 8px 25px rgba(0,255,136,0.5);
+                        border: 3px solid #00FF88;">
+                <h1 style="margin:0; color: #000; font-size: 32px; font-weight: bold;">
                     🎯 STRIKE SUGERIDO: Call ${strike_ideal:.2f}
+                </h1>
+                <p style="margin: 15px 0 0 0; color: #1A1D24; font-size: 18px; font-weight: 600;">
+                    📅 Vencimiento: 30-45 días | 💰 Precio actual: ${current_price:.2f}
+                </p>
+                <p style="margin: 10px 0 0 0; color: #000; font-size: 16px;">
+                    💪 Confianza: Larry {larry_signal['strength']}% | Wyckoff {wyckoff_signal['strength']}%
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        else:
+            # ⚠️ TARJETA AMARILLA/GRIS: ESPERAR
+            # Determinar razón principal
+            if larry_signal['strength'] > wyckoff_signal['strength']:
+                main_reason = larry_signal['suggested_strategy']
+                confidence = larry_signal['strength']
+            else:
+                main_reason = wyckoff_signal['suggested_strategy']
+                confidence = wyckoff_signal['strength']
+
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #FFA500 0%, #FF8C00 100%);
+                        padding: 25px;
+                        border-radius: 15px;
+                        text-align: center;
+                        margin: 20px 0;
+                        box-shadow: 0 6px 20px rgba(255,165,0,0.4);
+                        border: 2px solid #FFA500;">
+                <h2 style="margin:0; color: #000; font-size: 28px; font-weight: bold;">
+                    🟡 ESTADO: ESPERAR / HOLD
                 </h2>
-                <p style="margin: 10px 0 0 0; color: #1A1D24; font-size: 16px; font-weight: 600;">
-                    📅 Vencimiento recomendado: 30-45 días | 💰 Precio actual: ${current_price:.2f}
+                <p style="margin: 15px 0 0 0; color: #1A1D24; font-size: 16px; font-weight: 600;">
+                    💰 Precio actual: ${current_price:.2f}
+                </p>
+                <p style="margin: 10px 0 0 0; color: #000; font-size: 14px; max-width: 600px; margin-left: auto; margin-right: auto;">
+                    {main_reason[:120]}...
+                </p>
+                <p style="margin: 10px 0 0 0; color: #000; font-size: 14px;">
+                    📊 Confianza máxima: {confidence}%
                 </p>
             </div>
             """, unsafe_allow_html=True)
 
         st.markdown("---")
 
-        # ========== VISIÓN DOBLE: Dos columnas ==========
-        col_larry, col_wyckoff = st.columns(2)
+        # ========== DETALLES TÉCNICOS (OCULTOS EN EXPANDER) ==========
+        with st.expander("🔍 Ver Detalles Técnicos y Gráficos", expanded=False):
+            st.markdown("### 📊 Análisis Dual: Larry Williams vs Wyckoff")
 
-        with col_larry:
-            st.subheader("📊 Larry Williams")
-            render_larry_williams_mini(selected_symbol, larry_signal, df_with_indicators)
+            # Visión doble en columnas
+            col_larry, col_wyckoff = st.columns(2)
 
-        with col_wyckoff:
-            st.subheader("🐋 Wyckoff")
-            render_wyckoff_mini(selected_symbol, wyckoff_signal, df_with_indicators)
+            with col_larry:
+                st.subheader("📊 Larry Williams")
+                render_larry_williams_mini(selected_symbol, larry_signal, df_with_indicators)
 
-        st.markdown("---")
+            with col_wyckoff:
+                st.subheader("🐋 Wyckoff")
+                render_wyckoff_mini(selected_symbol, wyckoff_signal, df_with_indicators)
 
-        # ========== GRÁFICO UNIFICADO ==========
-        render_chart(selected_symbol, df_with_indicators, "Larry Williams")  # Mostrar Larry por defecto
+            st.markdown("---")
+
+            # Gráfico unificado
+            st.markdown("### 📈 Gráfico de Análisis Técnico")
+            render_chart(selected_symbol, df_with_indicators, "Larry Williams")  # Mostrar Larry por defecto
 
     except Exception as e:
         st.error(f"❌ Error inesperado: {str(e)}")
