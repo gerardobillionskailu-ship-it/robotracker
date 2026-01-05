@@ -8,6 +8,7 @@ Lógica de Trading:
 - Juez 3 (Momentum): Precio > SMA 20
 
 Ejecuta COMPRA solo si los 3 jueces aprueban y no hay posición abierta.
+Segunda modificacion manual por Gemini
 """
 
 import os
