@@ -63,20 +63,8 @@ def render_hero_header(symbol: str, current_price: float, prev_close: float):
     price_str = f"${current_price:.2f}"
     change_str = f"{arrow} ${abs(price_change):.2f} ({price_change_pct:+.2f}%)"
 
-    html_content = f"""
-    <div style='background: linear-gradient(135deg, #1A1D24 0%, #262730 100%); padding: 30px 20px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);'>
-        <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;'>
-            <div style='flex: 1; min-width: 120px;'>
-                <h1 style='margin: 0; font-size: 48px; font-weight: 900; color: #FFFFFF; letter-spacing: 2px;'>{symbol}</h1>
-                <p style='margin: 5px 0 0 0; font-size: 14px; color: #888; font-weight: 500;'>Stock Price</p>
-            </div>
-            <div style='text-align: right; min-width: 150px;'>
-                <div style='font-size: 36px; font-weight: 700; color: #FFFFFF; margin-bottom: 5px;'>{price_str}</div>
-                <div style='font-size: 18px; font-weight: 600; color: {color};'>{change_str}</div>
-            </div>
-        </div>
-    </div>
-    """
+    # HTML sin indentación para evitar problemas de rendering
+    html_content = f"""<div style='background: linear-gradient(135deg, #1A1D24 0%, #262730 100%); padding: 30px 20px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);'><div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;'><div style='flex: 1; min-width: 120px;'><h1 style='margin: 0; font-size: 48px; font-weight: 900; color: #FFFFFF; letter-spacing: 2px;'>{symbol}</h1><p style='margin: 5px 0 0 0; font-size: 14px; color: #888; font-weight: 500;'>Stock Price</p></div><div style='text-align: right; min-width: 150px;'><div style='font-size: 36px; font-weight: 700; color: #FFFFFF; margin-bottom: 5px;'>{price_str}</div><div style='font-size: 18px; font-weight: 600; color: {color};'>{change_str}</div></div></div></div>"""
 
     st.markdown(html_content, unsafe_allow_html=True)
 
