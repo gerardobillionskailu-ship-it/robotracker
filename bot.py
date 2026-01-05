@@ -17,155 +17,105 @@ import numpy as np
 from datetime import datetime
 import pytz
 
-# ========== CONFIGURACIÓN ==========
-
+# --- CONFIGURACIÓN ---
 API_KEY = os.environ.get('ALPACA_API_KEY')
 SECRET_KEY = os.environ.get('ALPACA_SECRET_KEY')
-ENDPOINT = os.environ.get('ALPACA_ENDPOINT', 'https://paper-api.alpaca.markets')
+ENDPOINT = os.environ.get('ALPACA_ENDPOINT')
 
 # TUS ACCIONES FAVORITAS (TECH WATCHLIST)
 WATCHLIST = ['NVDA', 'TSLA', 'AAPL', 'AMZN', 'MSFT', 'AMD']
 
-# ========== HERRAMIENTAS DE ANÁLISIS (INDICADORES) ==========
-
+# --- HERRAMIENTAS DE ANÁLISIS ---
 def calcular_rsi(series, period=14):
-    """
-    Calcula el RSI (Relative Strength Index).
-    Retorna valores entre 0 y 100.
-    """
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss.replace(0, np.nan)
+    rs = gain / loss
     return 100 - (100 / (1 + rs))
 
 def calcular_sma(series, window):
-    """
-    Calcula la SMA (Simple Moving Average).
-    """
     return series.rolling(window=window).mean()
 
-# ========== CEREBRO DEL BOT ==========
-
+# --- CEREBRO DEL BOT ---
 def run_bot():
-    """
-    Función principal que ejecuta el análisis de los 3 Jueces
-    sobre la watchlist de Tech Stocks.
-    """
-    print(f"--- 🧠 INICIANDO ANÁLISIS 3 JUECES: {datetime.now(pytz.UTC)} ---")
-    print(f"📂 Watchlist: {', '.join(WATCHLIST)}")
-
-    # Validar credenciales
+    print(f"--- 🧠 INICIANDO ANÁLISIS (VERSIÓN DIARIA CORREGIDA): {datetime.now()} ---")
+    
     if not API_KEY or not SECRET_KEY:
-        print("❌ ERROR: Credenciales no encontradas.")
-        print("Configura ALPACA_API_KEY y ALPACA_SECRET_KEY en GitHub Secrets.")
+        print("ERROR: Credenciales no encontradas.")
         return
 
-    # Conexión a Alpaca
-    try:
-        api = tradeapi.REST(API_KEY, SECRET_KEY, ENDPOINT, api_version='v2')
-    except Exception as e:
-        print(f"❌ Error conectando a Alpaca: {e}")
-        return
-
-    # Verificar estado del mercado
+    api = tradeapi.REST(API_KEY, SECRET_KEY, ENDPOINT, api_version='v2')
+    
+    # Verificar Mercado
     try:
         clock = api.get_clock()
         print(f"🕐 Mercado Abierto: {clock.is_open}")
-
-        if not clock.is_open:
-            print("⚠️ El mercado está CERRADO. Se realizará análisis simulado (sin ejecutar órdenes).")
     except Exception as e:
-        print(f"⚠️ No se pudo verificar el estado del mercado: {e}")
-
-    # BUCLE PRINCIPAL: Analizar cada acción de la lista
+        print(f"Nota: No se pudo verificar horario (Error: {e}). Continuando igual...")
+    
+    # BUCLE PRINCIPAL
     for symbol in WATCHLIST:
         try:
             print(f"\n🔍 Analizando: {symbol}...")
-
-            # 1. Obtener Datos (Velas Diarias de los últimos 300 periodos)
-            try:
-                bars = api.get_bars(symbol, tradeapi.TimeFrame.Day, limit=300).df
-            except Exception as e:
-                print(f"   ❌ Error obteniendo datos para {symbol}: {e}")
+            
+            # --- EL FIX MAESTRO: PEDIR DÍAS (Day), NO HORAS ---
+            # Pedimos 300 días de historia para asegurar que la SMA 200 funcione
+            bars = api.get_bars(symbol, tradeapi.TimeFrame.Day, limit=300).df
+            
+            if len(bars) < 200:
+                print(f"   ⚠️ Datos insuficientes para {symbol} ({len(bars)} velas). Saltando.")
                 continue
-
-            if bars.empty or len(bars) < 200:
-                print(f"   ⚠️ Datos insuficientes para {symbol} (se necesitan 200+ velas). Saltando.")
-                continue
-
-            # Limpieza básica de datos
+                
+            # Limpieza de datos
             closes = bars['close']
             current_price = closes.iloc[-1]
-
-            # 2. Calcular Indicadores (Los Jueces)
-            rsi = calcular_rsi(closes, period=14).iloc[-1]
-            sma_200 = calcular_sma(closes, window=200).iloc[-1]
-            sma_20 = calcular_sma(closes, window=20).iloc[-1]
-
-            # Validar que los indicadores se calcularon correctamente
-            if pd.isna(rsi) or pd.isna(sma_200) or pd.isna(sma_20):
-                print(f"   ⚠️ Indicadores inválidos para {symbol}. Saltando.")
-                continue
-
-            print(f"   📊 Precio: ${current_price:.2f} | RSI: {rsi:.2f} | SMA200: ${sma_200:.2f} | SMA20: ${sma_20:.2f}")
-
-            # 3. EL TRIBUNAL (Lógica de Decisión de los 3 Jueces)
-            juez_tendencia = current_price > sma_200      # ¿Estamos en subida a largo plazo?
-            juez_oportunidad = rsi < 70                   # ¿No está muy caro? (RSI < 70)
-            juez_momentum = current_price > sma_20        # ¿Tiene fuerza ahora?
-
+            
+            # Calcular Indicadores
+            rsi = calcular_rsi(closes).iloc[-1]
+            sma_200 = calcular_sma(closes, 200).iloc[-1]
+            sma_20 = calcular_sma(closes, 20).iloc[-1]
+            
+            print(f"   📊 Precio: ${current_price:.2f} | RSI: {rsi:.2f} | SMA200: {sma_200:.2f} | SMA20: {sma_20:.2f}")
+            
+            # --- EL TRIBUNAL (3 JUECES) ---
+            juez_tendencia = current_price > sma_200      # Juez 1: Tendencia Alcista
+            juez_oportunidad = rsi < 70                   # Juez 2: No está caro
+            juez_momentum = current_price > sma_20        # Juez 3: Fuerza corto plazo
+            
             # Veredicto
             if juez_tendencia and juez_oportunidad and juez_momentum:
-                print(f"   ✅ VEREDICTO: COMPRAR {symbol} (3/3 Jueces Aprobaron)")
-
-                # 4. Verificar si ya tenemos la acción
+                print(f"   ✅ VEREDICTO: COMPRAR {symbol} (3/3 Jueces Aprobado)")
+                
+                # Verificar si ya tenemos la acción
                 try:
                     pos = api.get_position(symbol)
-                    qty = int(pos.qty)
-                    if qty > 0:
-                        print(f"   ✋ Ya tienes {qty} acciones de {symbol} en cartera. No duplicamos.")
+                    if int(pos.qty) > 0:
+                        print(f"   ✋ Ya tienes {symbol}. Mantenemos posición.")
                         continue
                 except:
-                    # No tenemos posición, procedemos
-                    pass
-
-                # 5. EJECUTAR COMPRA (Solo si el mercado está abierto)
-                if clock.is_open:
-                    try:
-                        # Comprar 1 acción (puedes ajustar la cantidad según tu estrategia)
-                        api.submit_order(
-                            symbol=symbol,
-                            qty=1,
-                            side='buy',
-                            type='market',
-                            time_in_force='day'
-                        )
-                        print(f"   🚀 ORDEN ENVIADA: Compra de 1 acción de {symbol} @ ~${current_price:.2f}")
-                    except Exception as e:
-                        print(f"   ❌ Error enviando orden para {symbol}: {e}")
-                else:
-                    print(f"   💤 Mercado cerrado. Orden simulada: Compraría 1 {symbol} @ ${current_price:.2f}")
-
+                    pass # No hay posición
+                
+                # EJECUTAR COMPRA
+                print(f"   🚀 ENVIANDO ORDEN DE COMPRA POR {symbol}...")
+                api.submit_order(
+                    symbol=symbol,
+                    qty=1,
+                    side='buy',
+                    type='market',
+                    time_in_force='gtc' # Good till cancelled
+                )
+                
             else:
-                # Mostrar razones del rechazo
                 fallos = []
-                if not juez_tendencia:
-                    fallos.append(f"Tendencia Bajista (Precio ${current_price:.2f} < SMA200 ${sma_200:.2f})")
-                if not juez_oportunidad:
-                    fallos.append(f"RSI Alto ({rsi:.1f}/70)")
-                if not juez_momentum:
-                    fallos.append(f"Sin Momentum (Precio ${current_price:.2f} < SMA20 ${sma_20:.2f})")
-
-                print(f"   ❌ DESCARTADO. Razones: {' | '.join(fallos)}")
-
+                if not juez_tendencia: fallos.append("Tendencia Bajista (Debajo SMA200)")
+                if not juez_oportunidad: fallos.append(f"RSI Alto ({rsi:.0f})")
+                if not juez_momentum: fallos.append("Sin Momentum (Debajo SMA20)")
+                print(f"   ❌ DESCARTADO. Razones: {', '.join(fallos)}")
+                
         except Exception as e:
-            print(f"   ❌ Error analizando {symbol}: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"   Error analizando {symbol}: {e}")
 
     print("\n--- 🏁 ANÁLISIS FINALIZADO ---")
-    print(f"Timestamp: {datetime.now(pytz.UTC)}")
 
 if __name__ == "__main__":
     run_bot()
