@@ -83,9 +83,9 @@ def run_bot():
         try:
             print(f"\n🔍 Analizando: {symbol}...")
 
-            # 1. Obtener Datos (Velas de 1 Hora de los últimos 250 periodos)
+            # 1. Obtener Datos (Velas Diarias de los últimos 300 periodos)
             try:
-                bars = api.get_bars(symbol, tradeapi.TimeFrame.Hour, limit=250).df
+                bars = api.get_bars(symbol, tradeapi.TimeFrame.Day, limit=300).df
             except Exception as e:
                 print(f"   ❌ Error obteniendo datos para {symbol}: {e}")
                 continue
