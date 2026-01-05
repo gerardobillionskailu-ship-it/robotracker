@@ -116,6 +116,7 @@ class TechnicalIndicators:
     def calculate_all_indicators(self) -> pd.DataFrame:
         self.calculate_larry_williams()
         self.calculate_wyckoff_metrics()
+        self.calculate_elite_strategy()
         return self.df
 
     # ========== LARRY WILLIAMS STRATEGY ==========
@@ -271,6 +272,176 @@ class TechnicalIndicators:
             'suggested_strategy': suggested_strategy,
             'volume_relative': latest.get('volume_relative', 0),
             'close_position': latest.get('close_position', 50)
+        }
+
+    # ========== ELITE STRATEGY (TTM SQUEEZE + VWAP + RSI) ==========
+
+    def calculate_elite_strategy(self) -> pd.DataFrame:
+        """
+        Implementa la Estrategia Élite de nivel institucional:
+        - TTM Squeeze: Bollinger Bands vs Keltner Channels
+        - VWAP: Volume-Weighted Average Price (o VWMA como proxy)
+        - RSI: Relative Strength Index
+        """
+        period = 20
+        bb_mult = 2.0  # Bollinger Bands multiplicador
+        kc_mult = 1.5  # Keltner Channels multiplicador
+
+        # ========== BOLLINGER BANDS ==========
+        self.df['bb_middle'] = self.df['Close'].rolling(window=period).mean()
+        bb_std = self.df['Close'].rolling(window=period).std()
+        self.df['bb_upper'] = self.df['bb_middle'] + (bb_std * bb_mult)
+        self.df['bb_lower'] = self.df['bb_middle'] - (bb_std * bb_mult)
+
+        # ========== KELTNER CHANNELS ==========
+        # ATR (Average True Range)
+        high_low = self.df['High'] - self.df['Low']
+        high_close = np.abs(self.df['High'] - self.df['Close'].shift())
+        low_close = np.abs(self.df['Low'] - self.df['Close'].shift())
+
+        true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        self.df['atr'] = true_range.rolling(window=period).mean()
+
+        # Keltner Channels = EMA(20) ± 1.5*ATR
+        ema_20 = self.df['Close'].ewm(span=period, adjust=False).mean()
+        self.df['kc_upper'] = ema_20 + (self.df['atr'] * kc_mult)
+        self.df['kc_lower'] = ema_20 - (self.df['atr'] * kc_mult)
+
+        # ========== TTM SQUEEZE ==========
+        # Squeeze ON = Bollinger Bands DENTRO de Keltner Channels
+        self.df['squeeze_on'] = (
+            (self.df['bb_lower'] > self.df['kc_lower']) &
+            (self.df['bb_upper'] < self.df['kc_upper'])
+        )
+
+        # ========== VWAP (Volume-Weighted Average Price) ==========
+        # VWAP = Cumulative(Price * Volume) / Cumulative(Volume)
+        # Para anchored VWAP, usamos todo el período disponible
+        typical_price = (self.df['High'] + self.df['Low'] + self.df['Close']) / 3
+        self.df['vwap'] = (typical_price * self.df['Volume']).cumsum() / self.df['Volume'].cumsum()
+
+        # Fallback: VWMA 20 periodos si VWAP tiene problemas
+        self.df['vwma_20'] = (
+            (self.df['Close'] * self.df['Volume']).rolling(window=20).sum() /
+            self.df['Volume'].rolling(window=20).sum()
+        )
+
+        # ========== RSI (Relative Strength Index) ==========
+        rsi_period = 14
+        delta = self.df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
+
+        rs = gain / loss.replace(0, np.nan)
+        self.df['rsi'] = 100 - (100 / (1 + rs))
+
+        # ========== MOMENTUM INDICATOR (Squeeze Release) ==========
+        # Detecta cuando el squeeze se libera (cambio de True a False)
+        self.df['squeeze_release'] = (
+            (self.df['squeeze_on'].shift(1) == True) &
+            (self.df['squeeze_on'] == False)
+        )
+
+        return self.df
+
+    def get_elite_signal(self) -> Dict[str, any]:
+        """
+        Genera señal de trading basada en la Estrategia Élite.
+
+        Lógica de señal:
+        - BUY: (Squeeze ON O RSI > 50) AND (Precio > VWAP)
+        - NEUTRAL: Cualquier otro caso
+
+        Returns:
+            Dict con: signal, squeeze_on, rsi_val, vwap_val, strength, reasons, suggested_strategy
+        """
+        if self.df.empty or len(self.df) < 20:
+            return {
+                'signal': 'NEUTRAL',
+                'strength': 0,
+                'reasons': ['Datos insuficientes para Estrategia Élite'],
+                'suggested_strategy': 'Esperar más datos',
+                'squeeze_on': False,
+                'rsi_val': 50,
+                'vwap_val': 0
+            }
+
+        latest = self.df.iloc[-1]
+        reasons = []
+        strength = 50
+        signal = 'NEUTRAL'
+
+        # Extraer valores (con manejo de NaN)
+        squeeze_on = latest.get('squeeze_on', False)
+        rsi_val = latest.get('rsi', 50)
+        vwap_val = latest.get('vwap', latest['Close'])
+        close_price = latest['Close']
+
+        # Fallback si VWAP es NaN
+        if pd.isna(vwap_val):
+            vwap_val = latest.get('vwma_20', close_price)
+
+        # ========== ANÁLISIS TTM SQUEEZE ==========
+        if squeeze_on:
+            reasons.append("🔥 TTM Squeeze ACTIVO (Consolidación antes de movimiento)")
+            strength += 20
+        else:
+            reasons.append("💤 Squeeze OFF (Volatividad normal)")
+
+        # Detectar release del squeeze
+        if latest.get('squeeze_release', False):
+            reasons.append("🚀 SQUEEZE RELEASE detectado (Breakout inminente)")
+            strength += 30
+
+        # ========== ANÁLISIS VWAP ==========
+        if not pd.isna(vwap_val):
+            vwap_diff_pct = ((close_price - vwap_val) / vwap_val) * 100
+
+            if close_price > vwap_val:
+                reasons.append(f"✅ Precio SOBRE VWAP (+{vwap_diff_pct:.2f}%) - Tendencia alcista")
+                strength += 15
+            else:
+                reasons.append(f"⚠️ Precio BAJO VWAP ({vwap_diff_pct:.2f}%) - Tendencia bajista")
+                strength -= 15
+
+        # ========== ANÁLISIS RSI ==========
+        if not pd.isna(rsi_val):
+            if rsi_val > 70:
+                reasons.append(f"🔴 RSI sobrecomprado ({rsi_val:.1f}) - Riesgo de corrección")
+                strength -= 10
+            elif rsi_val > 50:
+                reasons.append(f"🟢 RSI alcista ({rsi_val:.1f}) - Momentum positivo")
+                strength += 10
+            elif rsi_val < 30:
+                reasons.append(f"🟢 RSI sobrevendido ({rsi_val:.1f}) - Oportunidad de rebote")
+                strength += 20
+            else:
+                reasons.append(f"🟡 RSI neutral ({rsi_val:.1f}) - Sin momentum claro")
+
+        # ========== LÓGICA DE SEÑAL FINAL ==========
+        # BUY: (Squeeze ON O RSI > 50) AND (Precio > VWAP)
+        buy_condition_1 = squeeze_on or (rsi_val > 50)
+        buy_condition_2 = close_price > vwap_val
+
+        if buy_condition_1 and buy_condition_2:
+            signal = 'BUY'
+            suggested_strategy = "🏆 Long Call (Estrategia Élite - Confluencia de indicadores)"
+        else:
+            signal = 'NEUTRAL'
+            if not buy_condition_2:
+                suggested_strategy = "Esperar que precio cruce VWAP al alza"
+            else:
+                suggested_strategy = "Esperar momentum (RSI > 50 o Squeeze)"
+
+        return {
+            'signal': signal,
+            'strength': max(0, min(100, strength)),
+            'reasons': reasons,
+            'suggested_strategy': suggested_strategy,
+            'squeeze_on': bool(squeeze_on),
+            'rsi_val': float(rsi_val) if not pd.isna(rsi_val) else 50.0,
+            'vwap_val': float(vwap_val) if not pd.isna(vwap_val) else float(close_price),
+            'squeeze_release': bool(latest.get('squeeze_release', False))
         }
 
 # ========== FUNCIONES AUXILIARES ==========
