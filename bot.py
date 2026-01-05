@@ -8,13 +8,13 @@ Lógica de Trading:
 - Juez 3 (Momentum): Precio > SMA 20
 
 Ejecuta COMPRA solo si los 3 jueces aprueban y no hay posición abierta.
-Tercera modificacion manual por Gemini
+Cuarta modificacion manual por Gemini
 """
 import os
 import alpaca_trade_api as tradeapi
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 # --- CONFIGURACIÓN ---
@@ -38,7 +38,7 @@ def calcular_sma(series, window):
 
 # --- CEREBRO DEL BOT ---
 def run_bot():
-    print(f"--- 🚀 INICIANDO VERSIÓN FINAL (DÍAS) - {datetime.now()} ---")
+    print(f"--- 🚀 INICIANDO VERSIÓN 'MIRADA PROFUNDA' - {datetime.now()} ---")
     
     if not API_KEY or not SECRET_KEY:
         print("❌ ERROR: No hay API KEYS.")
@@ -46,27 +46,28 @@ def run_bot():
 
     api = tradeapi.REST(API_KEY, SECRET_KEY, ENDPOINT, api_version='v2')
     
-    # Verificar Mercado
-    try:
-        clock = api.get_clock()
-        print(f"🕐 Mercado Abierto: {clock.is_open}")
-    except:
-        print("⚠️ No se pudo verificar horario. Continuando...")
+    # Calcular fecha de inicio (Hace 700 días para asegurar datos de sobra)
+    fecha_inicio = (datetime.now() - timedelta(days=700)).strftime('%Y-%m-%d')
+    print(f"📅 Solicitando datos desde: {fecha_inicio}")
 
     # BUCLE DE ANÁLISIS
     for symbol in WATCHLIST:
         try:
             print(f"\n🔍 Analizando: {symbol}...")
             
-            # --- SOLICITUD DE DATOS DIARIOS (Day) ---
-            # Pedimos 365 días para asegurar SMA 200
-            bars = api.get_bars(symbol, tradeapi.TimeFrame.Day, limit=365).df
+            # --- FIX: SOLICITUD EXPLÍCITA CON FECHA DE INICIO Y FEED IEX ---
+            bars = api.get_bars(
+                symbol, 
+                tradeapi.TimeFrame.Day, 
+                start=fecha_inicio,  # OBLIGATORIO: Fecha de inicio
+                limit=300,
+                feed='iex'           # OBLIGATORIO: Feed gratuito (IEX)
+            ).df
             
-            # Debug: Mostrar cuántos datos llegaron
             print(f"   📥 Datos descargados: {len(bars)} días.")
 
             if len(bars) < 200:
-                print(f"   ⚠️ Aún con TimeFrame.Day, hay pocos datos ({len(bars)}). Saltando.")
+                print(f"   ⚠️ Insuficiente historial ({len(bars)}). Saltando.")
                 continue
                 
             # Datos listos
@@ -86,23 +87,28 @@ def run_bot():
             juez_momentum = current_price > sma_20
             
             if juez_tendencia and juez_oportunidad and juez_momentum:
-                print(f"   ✅ COMPRAR {symbol} (Aprobado)")
+                print(f"   ✅ APROBADO: {symbol}")
                 
                 # Verificar posición
                 try:
                     pos = api.get_position(symbol)
                     if int(pos.qty) > 0:
-                        print("   ✋ Ya tenemos posición. Nada que hacer.")
+                        print("   ✋ Ya tenemos posición. Mantener.")
                         continue
                 except:
                     pass 
                 
                 # Ejecutar
-                api.submit_order(symbol=symbol, qty=1, side='buy', type='market', time_in_force='gtc')
+                api.submit_order(symbol=symbol, qty=1, side='buy', type='market', time_in_force='day')
                 print("   🚀 ORDEN ENVIADA.")
                 
             else:
-                print(f"   ❌ DESCARTADO (Tendencia:{juez_tendencia}, RSI:{juez_oportunidad}, Mom:{juez_momentum})")
+                # Mostrar por qué falló
+                razones = []
+                if not juez_tendencia: razones.append(f"Tendencia Bajista (Precio < {sma_200:.2f})")
+                if not juez_oportunidad: razones.append(f"RSI Alto ({rsi:.2f})")
+                if not juez_momentum: razones.append(f"Sin Momentum (Precio < {sma_20:.2f})")
+                print(f"   ❌ DESCARTADO: {', '.join(razones)}")
                 
         except Exception as e:
             print(f"   Error en {symbol}: {e}")
