@@ -231,6 +231,87 @@ def calculate_optimal_strike(current_price: float) -> float:
     else:
         return round(strike)
 
+# ========== VISUALIZADOR DE OPCIONES (ROBINHOOD STYLE) ==========
+
+def calculate_expiration_date(days_forward=35):
+    """Calcula la fecha de vencimiento ideal (viernes más cercano a +35 días)"""
+    target_date = datetime.now() + timedelta(days=days_forward)
+
+    # Encontrar el viernes más cercano
+    # weekday(): Monday=0, Friday=4, Sunday=6
+    days_until_friday = (4 - target_date.weekday()) % 7
+
+    if days_until_friday == 0:
+        # Si ya es viernes, usar ese viernes
+        friday = target_date
+    else:
+        # Buscar el próximo viernes
+        friday = target_date + timedelta(days=days_until_friday)
+
+    return friday
+
+def smart_strike_rounding(strike: float) -> float:
+    """Redondea el strike según reglas de mercado de opciones"""
+    if strike < 10:
+        return round(strike, 2)  # Centavos
+    elif strike < 50:
+        return round(strike * 2) / 2  # Múltiplos de $0.50
+    elif strike < 200:
+        return round(strike)  # Dólares enteros
+    else:
+        return round(strike / 5) * 5  # Múltiplos de $5
+
+def render_option_strikes(current_price: float, symbol: str):
+    """
+    Renderiza visualizador de strikes estilo Robinhood
+    Muestra 3 opciones: Aggressive (OTM +2%), Balanced (ATM), Safe (ITM -2%)
+    """
+
+    # Calcular fecha de vencimiento (viernes más cercano a +35 días)
+    expiration = calculate_expiration_date(35)
+    exp_formatted = expiration.strftime('%b %d')  # Ej: "Feb 16"
+
+    # Calcular strikes
+    aggressive_strike = smart_strike_rounding(current_price * 1.02)  # +2% OTM
+    balanced_strike = smart_strike_rounding(current_price)  # ATM
+    safe_strike = smart_strike_rounding(current_price * 0.98)  # -2% ITM
+
+    # Escapar valores para HTML
+    symbol_safe = str(symbol).replace('<', '&lt;').replace('>', '&gt;')
+
+    # Construir HTML estilo Robinhood (compactado)
+    html_content = f"""
+    <div style="background: linear-gradient(135deg, #1A1D24 0%, #262730 100%); padding: 25px 20px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+        <h3 style="margin: 0 0 15px 0; font-size: 18px; font-weight: 700; color: #FFFFFF;">📊 Contratos Recomendados - {symbol_safe}</h3>
+        <p style="margin: 0 0 20px 0; font-size: 13px; color: #888;">Vencimiento óptimo para swing trading (30-45 días)</p>
+        <div style="background: rgba(255,255,255,0.05); border-radius: 12px; overflow: hidden;">
+            <div style="display: flex; padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.1); align-items: center;">
+                <div style="flex: 1; min-width: 80px;"><span style="font-size: 12px; color: #888; font-weight: 600;">FECHA</span></div>
+                <div style="flex: 2; min-width: 120px;"><span style="font-size: 12px; color: #888; font-weight: 600;">STRIKE</span></div>
+                <div style="flex: 1; min-width: 100px; text-align: right;"><span style="font-size: 12px; color: #888; font-weight: 600;">PERFIL</span></div>
+            </div>
+            <div style="display: flex; padding: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); align-items: center; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,255,136,0.05)'" onmouseout="this.style.background='transparent'">
+                <div style="flex: 1; min-width: 80px;"><span style="font-size: 14px; color: #FFF; font-weight: 600;">📅 {exp_formatted}</span></div>
+                <div style="flex: 2; min-width: 120px;"><span style="font-size: 16px; color: #00FF88; font-weight: 700;">${aggressive_strike:.2f} Call</span></div>
+                <div style="flex: 1; min-width: 100px; text-align: right;"><span style="background: linear-gradient(135deg, #FF6B35 0%, #FF8C42 100%); padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; color: #000;">🚀 Aggressive</span></div>
+            </div>
+            <div style="display: flex; padding: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); align-items: center; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,215,0,0.05)'" onmouseout="this.style.background='transparent'">
+                <div style="flex: 1; min-width: 80px;"><span style="font-size: 14px; color: #FFF; font-weight: 600;">📅 {exp_formatted}</span></div>
+                <div style="flex: 2; min-width: 120px;"><span style="font-size: 16px; color: #FFD700; font-weight: 700;">${balanced_strike:.2f} Call</span></div>
+                <div style="flex: 1; min-width: 100px; text-align: right;"><span style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; color: #000;">⚖️ Balanced</span></div>
+            </div>
+            <div style="display: flex; padding: 15px; align-items: center; transition: background 0.2s;" onmouseover="this.style.background='rgba(100,149,237,0.05)'" onmouseout="this.style.background='transparent'">
+                <div style="flex: 1; min-width: 80px;"><span style="font-size: 14px; color: #FFF; font-weight: 600;">📅 {exp_formatted}</span></div>
+                <div style="flex: 2; min-width: 120px;"><span style="font-size: 16px; color: #6495ED; font-weight: 700;">${safe_strike:.2f} Call</span></div>
+                <div style="flex: 1; min-width: 100px; text-align: right;"><span style="background: linear-gradient(135deg, #6495ED 0%, #4169E1 100%); padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; color: #FFF;">🛡️ Safe</span></div>
+            </div>
+        </div>
+        <p style="margin: 15px 0 0 0; font-size: 11px; color: #666; text-align: center;">💡 Aggressive: Mayor retorno potencial | Balanced: Equilibrio riesgo/retorno | Safe: Mayor probabilidad de profit</p>
+    </div>
+    """
+
+    st.markdown(html_content, unsafe_allow_html=True)
+
 # ========== DETALLES TÉCNICOS (EXPANDER) ==========
 
 def render_technical_details(symbol, larry_signal, wyckoff_signal, elite_signal, df):
@@ -480,6 +561,9 @@ def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mod
 
         if show_buy_signal:
             render_action_card(strike_ideal, current_price, elite_buy)
+
+            # ========== VISUALIZADOR DE OPCIONES (solo en señal BUY) ==========
+            render_option_strikes(current_price, selected_symbol)
         else:
             # Tarjeta HOLD
             max_strength = max(larry_signal['strength'], wyckoff_signal['strength'], elite_signal['strength'])
