@@ -115,7 +115,7 @@ def render_guide():
 
     st.markdown("---")
 
-    # ========== GESTIÓN DE RIESGO ==========
+    # ========== GESTIÓN DE RIESGO INTERACTIVA ==========
     st.header("💰 Gestión de Riesgo (Regla del 15%)")
 
     st.markdown("""
@@ -124,41 +124,177 @@ def render_guide():
 
     ### 📐 Regla del 15%
 
-    Si tienes un capital de **$1,000**, **NUNCA** debes arriesgar más del **15%** ($150)
-    en una sola operación de opciones.
+    **NUNCA** debes arriesgar más del **15%** de tu capital en una sola operación de opciones.
 
     **¿Por qué?**
     - Las opciones pueden expirar sin valor (pérdida del 100% de la prima)
     - Diversificación: Con 15% por operación, puedes tener hasta 6 posiciones diferentes
-    - Protección de capital: Si pierdes 3 operaciones seguidas, aún tienes $550 (55% del capital)
-
-    ### 🧮 Cómo Funciona la Calculadora
-
-    Cuando ves una señal **BUY**, la app te muestra:
-
-    1. **Costo Estimado (1 contrato)**: Prima estimada × 100 acciones
-       - Ejemplo: Si AAPL está en $150, la prima de un Call +5% puede costar ~$600
-
-    2. **Stop Loss (-25%)**: Precio al que debes salir si la opción pierde valor
-       - Límita tu pérdida al 25% de la prima pagada
-       - Ejemplo: Si pagaste $150, sal cuando baje a $112.50
-
-    3. **Take Profit (+50%)**: Precio al que debes tomar ganancias
-       - Asegura tu ganancia al 50% de la prima pagada
-       - Ejemplo: Si pagaste $150, vende cuando suba a $225
-
-    ### ✅ Validación Automática
-
-    La app te dirá:
-
-    - **✅ RIESGO CONTROLADO**: Si el costo está dentro del límite de $150
-    - **⚠️ RIESGO ALTO**: Si el costo supera $150 (NO operes, espera otra oportunidad)
+    - Protección de capital: Si pierdes 3 operaciones seguidas, aún conservas 55% del capital
     """)
+
+    st.markdown("---")
+
+    # ========== CALCULADORA INTERACTIVA ==========
+    st.subheader("🧮 Calculadora Interactiva de Riesgo")
+    st.markdown("*Prueba con tu propio capital para entender la regla del 15%*")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        capital_usuario = st.number_input(
+            "💵 Tu Capital Actual ($)",
+            min_value=100,
+            max_value=100000,
+            value=1000,
+            step=100,
+            help="Capital total disponible para trading"
+        )
+
+    with col2:
+        precio_accion = st.number_input(
+            "📊 Precio de la Acción ($)",
+            min_value=1.0,
+            max_value=1000.0,
+            value=150.0,
+            step=5.0,
+            help="Precio actual del ticker que quieres analizar"
+        )
+
+    # Cálculos dinámicos
+    max_riesgo = capital_usuario * 0.15  # 15% del capital
+    prima_estimada = precio_accion * 0.04  # 4% del precio (estimación conservadora)
+    costo_contrato = prima_estimada * 100
+    stop_loss = costo_contrato * 0.75  # -25%
+    take_profit = costo_contrato * 1.50  # +50%
+
+    # Mostrar resultados
+    st.markdown("### 📊 Resultados Calculados:")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            "🎯 Riesgo Máximo (15%)",
+            f"${max_riesgo:.2f}",
+            help="Nunca arriesgues más de esta cantidad en una operación"
+        )
+
+    with col2:
+        st.metric(
+            "💰 Costo Estimado (1 Call)",
+            f"${costo_contrato:.2f}",
+            help=f"Prima ~${prima_estimada:.2f}/acción × 100"
+        )
+
+    with col3:
+        posiciones_posibles = int(capital_usuario / costo_contrato)
+        st.metric(
+            "📈 Posiciones Posibles",
+            f"{posiciones_posibles}",
+            help="Cantidad de contratos que podrías comprar con tu capital"
+        )
+
+    # Validación visual
+    if costo_contrato <= max_riesgo:
+        st.success(f"""
+        ✅ **RIESGO CONTROLADO**: El costo (${costo_contrato:.2f}) está dentro de tu límite de ${max_riesgo:.2f}.
+
+        **Stop Loss**: Vende si baja a ${stop_loss:.2f} (-25%)
+        **Take Profit**: Vende si sube a ${take_profit:.2f} (+50%)
+
+        **Capital restante**: ${capital_usuario - costo_contrato:.2f} para diversificar en otras oportunidades.
+        """)
+    else:
+        st.error(f"""
+        ⚠️ **RIESGO ALTO**: El costo (${costo_contrato:.2f}) supera tu límite de ${max_riesgo:.2f}.
+
+        **Recomendaciones:**
+        1. Busca un ticker más barato
+        2. Usa un strike más alejado (OTM) con prima menor
+        3. Aumenta tu capital base antes de operar
+        4. NO operes hasta tener el capital adecuado
+        """)
 
     st.warning("""
     ⚠️ **IMPORTANTE**: Esta calculadora usa precios **estimados**. Antes de operar,
     verifica el precio real de la opción en tu broker (ej: Robinhood, TD Ameritrade, Interactive Brokers).
     """)
+
+    st.markdown("---")
+
+    # ========== CHECKLIST DE DISCIPLINA ==========
+    st.header("✅ Checklist de Disciplina (Antes de Operar)")
+    st.markdown("*Marca todos los checks antes de ejecutar cualquier operación*")
+
+    check1 = st.checkbox("📈 **¿Vi la tendencia?** - Revisé el gráfico y entiendo la dirección del precio", value=False)
+    check2 = st.checkbox("💰 **¿Calculé el riesgo?** - Sé exactamente cuánto puedo perder (Stop Loss)", value=False)
+    check3 = st.checkbox("🧘 **¿Estoy tranquilo?** - No estoy operando por FOMO o desesperación", value=False)
+    check4 = st.checkbox("💔 **¿Acepto perder?** - Entiendo que puedo perder el 100% de la prima y lo acepto", value=False)
+
+    all_checks = check1 and check2 and check3 and check4
+
+    if all_checks:
+        st.success("""
+        🎉 **¡Listo para operar!**
+
+        Has completado el checklist de disciplina. Recuerda:
+        - Respeta tu Stop Loss sin excepciones
+        - Toma ganancias en tu Take Profit (no seas codicioso)
+        - Una pérdida es parte del juego, 6 de cada 10 operaciones ganadoras es EXCELENTE
+        """)
+    else:
+        st.warning("""
+        ⚠️ **No estás listo aún**
+
+        Completa todos los checks antes de operar. La disciplina es la diferencia entre
+        traders ganadores y perdedores. No te saltes este paso.
+        """)
+
+    st.markdown("---")
+
+    # ========== QUIZ RÁPIDO ==========
+    st.header("🎓 Quiz Rápido de Trading")
+    st.markdown("*Refuerza tu conocimiento con esta pregunta:*")
+
+    quiz_respuesta = st.radio(
+        "**¿Qué haces si el precio toca tu Stop Loss?**",
+        options=[
+            "A) Espero un poco más, puede recuperarse",
+            "B) Vendo inmediatamente sin dudarlo",
+            "C) Compro más para promediar el precio",
+            "D) Muevo el Stop Loss más abajo para darle espacio"
+        ],
+        index=None,
+        help="Selecciona la respuesta correcta según las reglas de gestión de riesgo"
+    )
+
+    if quiz_respuesta:
+        if quiz_respuesta.startswith("B)"):
+            st.success("""
+            ✅ **¡CORRECTO!**
+
+            Cuando el precio toca tu Stop Loss, **VENDES INMEDIATAMENTE**.
+
+            El Stop Loss existe para proteger tu capital. No hay "esperar un poco más" ni "darle espacio".
+            Las mejores traders siguen sus reglas religiosamente.
+
+            **Recuerda**: Es mejor salir con -25% y vivir para operar otro día, que quedarte esperando
+            y perder -100%.
+            """)
+        else:
+            st.error(f"""
+            ❌ **Incorrecto**
+
+            Respuesta correcta: **B) Vendo inmediatamente sin dudarlo**
+
+            **¿Por qué las otras opciones son malas?**
+
+            - **A) Esperar**: El mercado no te debe nada. Si tocó el Stop Loss, tu análisis falló. Sal.
+            - **C) Promediar**: Esto es "añadir a una posición perdedora". Nunca lo hagas.
+            - **D) Mover el Stop Loss**: Esto es trampa a ti mismo. Perderás más dinero.
+
+            El Stop Loss es tu red de seguridad. Respétalo SIEMPRE.
+            """)
 
     st.markdown("---")
 
