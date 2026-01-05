@@ -1,0 +1,39 @@
+name: TradeOlympo Auto-Bot
+
+on:
+  schedule:
+    # Ejecución programada: Cada hora de 14:00 a 21:00 UTC (9am-4pm EST), Lunes a Viernes
+    # Horario del mercado estadounidense: 9:30am-4pm EST (14:30-21:00 UTC)
+    - cron: '0 14-21 * * 1-5'
+  workflow_dispatch: # Botón para ejecución manual inmediata desde GitHub Actions UI
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Trading Bot
+      env:
+        ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+        ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+        ALPACA_ENDPOINT: ${{ secrets.ALPACA_ENDPOINT }}
+      run: python bot.py
+
+    - name: Show execution summary
+      if: always()
+      run: |
+        echo "✅ Ejecución completada"
+        echo "Timestamp: $(date)"
