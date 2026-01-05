@@ -77,7 +77,23 @@ def render_strategy_card(strategy_mode: str, custom_ticker: str = "", simulation
             st.success("🎮 Usando datos sintéticos - Rally por cambio de régimen en Venezuela")
             df = generate_synthetic_data(selected_symbol, days=500)
         else:
-            # Obtener datos históricos usando función robusta con User-Agent
+            # Verificar si API key está configurada
+            api_key_configured = bool(st.secrets.get("ALPHAVANTAGE_API_KEY", ""))
+
+            if not api_key_configured:
+                st.error(f"❌ API Key de Alpha Vantage no configurada")
+                st.info("""
+                **Para usar datos reales:**
+                1. Ve a **Settings → Secrets** en Streamlit Cloud
+                2. Añade: `ALPHAVANTAGE_API_KEY = "TU_API_KEY"`
+                3. Obtén tu API key gratis en: https://www.alphavantage.co/support/#api-key
+                4. Presiona **Save changes** y espera ~1 minuto
+
+                **Alternativa:** Activa el **Modo Simulación** en el sidebar.
+                """)
+                return
+
+            # Obtener datos históricos de Alpha Vantage
             df = fetch_stock_data(selected_symbol, period="2y")
 
         # Validar que el DataFrame no esté vacío y tenga suficientes datos
@@ -86,13 +102,15 @@ def render_strategy_card(strategy_mode: str, custom_ticker: str = "", simulation
             st.info("""
             **Posibles causas:**
             - El símbolo no existe o está mal escrito
-            - Problemas de conexión con Yahoo Finance
+            - Límite de API alcanzado (Alpha Vantage: 5 calls/min, 500 calls/día gratis)
             - El símbolo no tiene datos históricos disponibles
+            - Conexión a Internet interrumpida
 
             **Sugerencias:**
+            - Espera 1 minuto y recarga (límite de rate)
             - Intenta con otro símbolo del watchlist
-            - Recarga la página
-            - Verifica tu conexión a Internet
+            - Activa **Modo Simulación** en el sidebar
+            - Verifica tu API key en Settings → Secrets
             """)
             return
 
