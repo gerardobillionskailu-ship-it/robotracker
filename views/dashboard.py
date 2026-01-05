@@ -16,21 +16,57 @@ from utils.data_loader import get_realtime_price, get_company_logo, get_company_
 DEFAULT_WATCHLIST = ['CVX', 'SLB', 'HAL', 'XLE']
 FALLBACK_SYMBOL = "AAPL"
 
-# ========== SELECTOR DE TICKER COMPACTO ==========
+# ========== SELECTOR DE TICKER COMPACTO (MOBILE-FIRST) ==========
 
 def render_ticker_selector(symbols):
-    """Renderiza selector de ticker horizontal tipo pills"""
+    """
+    Renderiza selector de ticker horizontal deslizable (mobile-optimized)
+    Barra de navegación tipo pills con scroll horizontal en mobile
+    """
+    # CSS para scroll horizontal mobile-first
     st.markdown("""
     <style>
+    /* Forzar contenedor horizontal scrollable en mobile */
     div[data-testid="stHorizontalBlock"] {
-        gap: 0.5rem;
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        gap: 0.5rem !important;
+        padding: 0.5rem 0 !important;
+        -webkit-overflow-scrolling: touch !important;
+        scrollbar-width: thin !important;
+    }
+
+    /* Ocultar scrollbar en mobile pero permitir scroll */
+    div[data-testid="stHorizontalBlock"]::-webkit-scrollbar {
+        height: 3px;
+    }
+
+    div[data-testid="stHorizontalBlock"]::-webkit-scrollbar-thumb {
+        background: rgba(255,255,255,0.3);
+        border-radius: 10px;
+    }
+
+    /* Botones de ticker no wrappean */
+    div[data-testid="stHorizontalBlock"] > div {
+        flex-shrink: 0 !important;
+        min-width: 70px !important;
+    }
+
+    /* Estilo de píldoras */
+    div[data-testid="stHorizontalBlock"] button {
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        border-radius: 20px !important;
+        padding: 8px 16px !important;
+        white-space: nowrap !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
     current = st.session_state.get('selected_symbol', symbols[0] if symbols else FALLBACK_SYMBOL)
 
-    # Pills horizontales
+    # Pills horizontales con scroll
     cols = st.columns(len(symbols))
     for idx, symbol in enumerate(symbols):
         with cols[idx]:
@@ -465,32 +501,92 @@ def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mod
     if not watchlist_symbols or len(watchlist_symbols) == 0:
         watchlist_symbols = DEFAULT_WATCHLIST
 
-    # ========== CSS MOBILE-FIRST ==========
+    # ========== CSS MOBILE-FIRST (OPTIMIZADO PARA IPHONE) ==========
     st.markdown("""
     <style>
-    /* Eliminar padding extra en mobile */
+    /* Reducir padding vertical agresivamente en mobile */
     .main {
         padding-top: 0 !important;
+        padding-bottom: 1rem !important;
+    }
+
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+    }
+
+    /* Reducir espacio entre elementos */
+    .element-container {
+        margin-bottom: 0.5rem !important;
     }
 
     /* Optimización para botones */
     .stButton > button {
         font-weight: 600;
+        margin-bottom: 0.3rem !important;
+    }
+
+    /* Reducir margines en métricas (Jueces) */
+    div[data-testid="stMetric"] {
+        margin-bottom: 0.3rem !important;
+        padding: 0.5rem !important;
+    }
+
+    div[data-testid="stMetricValue"] {
+        font-size: 1.2rem !important;
     }
 
     /* Tabs más compactos */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+        gap: 6px !important;
+        margin-bottom: 0.5rem !important;
     }
 
     .stTabs [data-baseweb="tab"] {
-        font-size: 14px;
-        font-weight: 600;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        padding: 6px 12px !important;
+    }
+
+    /* Columnas más compactas en mobile */
+    @media (max-width: 768px) {
+        div[data-testid="column"] {
+            padding: 0.25rem !important;
+        }
+
+        .main {
+            padding-left: 0.25rem !important;
+            padding-right: 0.25rem !important;
+        }
+
+        /* Reducir altura de gráficos en mobile */
+        .js-plotly-plot {
+            max-height: 400px !important;
+        }
     }
 
     /* Fix Plotly */
     .js-plotly-plot, .plotly {
         width: 100% !important;
+    }
+
+    /* Reducir margen de expanders */
+    .streamlit-expanderHeader {
+        font-size: 14px !important;
+        padding: 0.5rem !important;
+    }
+
+    /* Hacer markdown más compacto */
+    .stMarkdown {
+        margin-bottom: 0.5rem !important;
+    }
+
+    /* Info boxes más compactos */
+    .stAlert {
+        padding: 0.5rem !important;
+        margin-bottom: 0.5rem !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -540,12 +636,26 @@ def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mod
         wyckoff_signal = indicators.get_wyckoff_signal()
         elite_signal = indicators.get_elite_signal()
 
-        current_price = df_with_indicators['Close'].iloc[-1]
-        prev_close = df_with_indicators['Close'].iloc[-2] if len(df_with_indicators) > 1 else current_price
-        strike_ideal = calculate_optimal_strike(current_price)
+        # Precio histórico (fallback)
+        historical_price = df_with_indicators['Close'].iloc[-1]
+        prev_close = df_with_indicators['Close'].iloc[-2] if len(df_with_indicators) > 1 else historical_price
 
         # ========== 3. HEADER HERO ==========
-        render_hero_header(selected_symbol, current_price, prev_close, api_key=api_key, use_realtime=True)
+        render_hero_header(selected_symbol, historical_price, prev_close, api_key=api_key, use_realtime=True)
+
+        # ========== SINCRONIZACIÓN DE PRECIO REAL-TIME ==========
+        # Obtener precio real-time para cálculos (si está disponible)
+        realtime_data = get_realtime_price(selected_symbol, api_key=api_key, use_alpaca=True)
+
+        if realtime_data and realtime_data.get('is_live'):
+            # Usar precio real-time para cálculos de strikes y opciones
+            current_price = realtime_data['price']
+        else:
+            # Fallback a precio histórico
+            current_price = historical_price
+
+        # Calcular strike con precio sincronizado
+        strike_ideal = calculate_optimal_strike(current_price)
 
         # ========== 4. PANEL SEMÁFORO ==========
         render_semaphore_panel(larry_signal, wyckoff_signal, elite_signal)

@@ -24,7 +24,7 @@ st.set_page_config(
     page_title="TradeOlympo - Análisis Financiero",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"  # Mobile-first: sidebar oculto por defecto
 )
 
 
