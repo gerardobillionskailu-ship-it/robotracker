@@ -91,6 +91,54 @@ def render_wyckoff_card_content(symbol, signal_data, df):
     # 3. Razón principal
     st.caption(f"**Razón**: {signal_data['suggested_strategy'][:100]}...")
 
+def render_elite_card_content(symbol, signal_data, df):
+    """Renderiza el contenido de Estrategia Élite sin usar st.columns (evita nesting)"""
+    latest = df.iloc[-1]
+
+    # 1. Señal Visual (BUY o NEUTRAL)
+    color = "#FFD700" if signal_data['signal'] == 'BUY' else "#6A5ACD"  # Gold para BUY, Purple para NEUTRAL
+    signal_emoji = "🏆" if signal_data['signal'] == 'BUY' else "⏳"
+
+    st.markdown(f"""
+    <div style="text-align: center; background: {color}20; padding: 10px; border-radius: 10px; border: 2px solid {color}; margin-bottom: 10px;">
+        <h3 style="margin:0; color: {color};">{signal_emoji} {signal_data['signal']} ({signal_data['strength']}%)</h3>
+        <p style="margin:0; font-size: 0.8em; color: #ddd;">Estrategia Élite</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 2. Métricas Élite (HTML stack - NO st.columns)
+    # Métrica 1: TTM Squeeze Status
+    squeeze_status = "🔥 Firing" if signal_data['squeeze_on'] else "💤 Quiet"
+    squeeze_color = "#FF4500" if signal_data['squeeze_on'] else "#708090"
+    st.markdown(render_metric_html("TTM Squeeze", squeeze_status, color=squeeze_color), unsafe_allow_html=True)
+
+    # Métrica 2: VWAP Tendencia
+    vwap_diff = ((latest['Close'] - signal_data['vwap_val']) / signal_data['vwap_val']) * 100
+    vwap_trend = f"+{vwap_diff:.2f}%" if vwap_diff > 0 else f"{vwap_diff:.2f}%"
+    vwap_status = "SOBRE" if vwap_diff > 0 else "BAJO"
+    vwap_color = "#00FF88" if vwap_diff > 0 else "#FF073A"
+    st.markdown(render_metric_html(f"Precio vs VWAP", f"{vwap_status} ({vwap_trend})", color=vwap_color), unsafe_allow_html=True)
+
+    # Métrica 3: RSI
+    rsi_val = signal_data['rsi_val']
+    if rsi_val > 70:
+        rsi_color = "#FF073A"  # Rojo (sobrecomprado)
+    elif rsi_val > 50:
+        rsi_color = "#00FF88"  # Verde (alcista)
+    elif rsi_val < 30:
+        rsi_color = "#00D9FF"  # Cyan (sobrevendido)
+    else:
+        rsi_color = "#FFA500"  # Naranja (neutral)
+
+    st.markdown(render_metric_html("RSI (14)", f"{rsi_val:.1f}", color=rsi_color), unsafe_allow_html=True)
+
+    # 3. Razón principal
+    st.caption(f"**Razón**: {signal_data['suggested_strategy'][:100]}...")
+
+    # 4. Squeeze Release Alert (si aplica)
+    if signal_data.get('squeeze_release', False):
+        st.success("🚀 **SQUEEZE RELEASE DETECTADO** - Breakout en progreso!")
+
 # ========== STRIKE CALCULATOR ==========
 
 def calculate_optimal_strike(current_price: float) -> float:
@@ -108,8 +156,8 @@ def calculate_optimal_strike(current_price: float) -> float:
 
 def render_dual_strategy_card(custom_ticker: str = "", simulation_mode: bool = False, api_key: str = ""):
     """
-    Renderiza VISIÓN DOBLE con Mobile-First UI.
-    TARJETA PROMINENTE arriba, detalles en expander.
+    Renderiza VISIÓN TRIPLE (Larry + Wyckoff + Élite) con Mobile-First UI.
+    TARJETA PROMINENTE arriba, detalles en expander con 3 columnas.
     """
     # CSS adicional para optimizar móvil
     st.markdown("""
@@ -174,50 +222,67 @@ def render_dual_strategy_card(custom_ticker: str = "", simulation_mode: bool = F
             st.error("❌ Error al calcular indicadores")
             return
 
-        # Obtener señales de AMBAS estrategias
+        # Obtener señales de LAS TRES estrategias
         larry_signal = indicators.get_larry_williams_signal()
         wyckoff_signal = indicators.get_wyckoff_signal()
+        elite_signal = indicators.get_elite_signal()
 
         current_price = df_with_indicators['Close'].iloc[-1]
         strike_ideal = calculate_optimal_strike(current_price)
 
         # ========== TARJETA PROMINENTE (MOBILE-FIRST) ==========
 
+        # Detectar si al menos UNA estrategia da señal de compra fuerte
         show_buy_signal = (
             (larry_signal['signal'] == 'BUY' and larry_signal['strength'] >= 50) or
-            (wyckoff_signal['signal'] == 'BUY' and wyckoff_signal['strength'] >= 50)
+            (wyckoff_signal['signal'] == 'BUY' and wyckoff_signal['strength'] >= 50) or
+            (elite_signal['signal'] == 'BUY' and elite_signal['strength'] >= 50)
         )
 
+        # Detectar si la señal viene de la Estrategia Élite
+        elite_buy = (elite_signal['signal'] == 'BUY' and elite_signal['strength'] >= 50)
+
         if show_buy_signal:
-            # ✅ TARJETA VERDE: COMPRA
+            # ✅ TARJETA VERDE: COMPRA (con trofeo si viene de Élite)
+            banner_title = "🏆 SEÑAL ÉLITE DETECTADA" if elite_buy else "🎯 STRIKE SUGERIDO: Call"
+            banner_color = "#FFD700" if elite_buy else "#00FF88"  # Gold si es élite, verde si no
+            border_color = "#FFD700" if elite_buy else "#00FF88"
+            gradient = f"linear-gradient(135deg, {banner_color} 0%, {'#FFA500' if elite_buy else '#00D975'} 100%)"
+
             st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #00FF88 0%, #00D975 100%);
+            <div style="background: {gradient};
                         padding: 30px;
                         border-radius: 15px;
                         text-align: center;
                         margin: 20px 0;
-                        box-shadow: 0 8px 25px rgba(0,255,136,0.5);
-                        border: 3px solid #00FF88;">
+                        box-shadow: 0 8px 25px rgba({'255,215,0' if elite_buy else '0,255,136'},0.5);
+                        border: 3px solid {border_color};">
                 <h1 style="margin:0; color: #000; font-size: 32px; font-weight: bold;">
-                    🎯 STRIKE SUGERIDO: Call ${strike_ideal:.2f}
+                    {banner_title}
                 </h1>
                 <p style="margin: 15px 0 0 0; color: #1A1D24; font-size: 18px; font-weight: 600;">
-                    📅 Vencimiento: 30-45 días | 💰 Precio actual: ${current_price:.2f}
+                    💰 Strike: ${strike_ideal:.2f} | 📅 Vencimiento: 30-45 días | Precio: ${current_price:.2f}
                 </p>
                 <p style="margin: 10px 0 0 0; color: #000; font-size: 16px;">
-                    💪 Confianza: Larry {larry_signal['strength']}% | Wyckoff {wyckoff_signal['strength']}%
+                    💪 Confianza: Larry {larry_signal['strength']}% | Wyckoff {wyckoff_signal['strength']}% | Élite {elite_signal['strength']}%
                 </p>
             </div>
             """, unsafe_allow_html=True)
 
         else:
             # ⚠️ TARJETA AMARILLA: ESPERAR
-            if larry_signal['strength'] > wyckoff_signal['strength']:
+            # Determinar cuál estrategia tiene mayor confianza
+            max_strength = max(larry_signal['strength'], wyckoff_signal['strength'], elite_signal['strength'])
+
+            if larry_signal['strength'] == max_strength:
                 main_reason = larry_signal['suggested_strategy']
                 confidence = larry_signal['strength']
-            else:
+            elif wyckoff_signal['strength'] == max_strength:
                 main_reason = wyckoff_signal['suggested_strategy']
                 confidence = wyckoff_signal['strength']
+            else:
+                main_reason = elite_signal['suggested_strategy']
+                confidence = elite_signal['strength']
 
             st.markdown(f"""
             <div style="background: linear-gradient(135deg, #FFA500 0%, #FF8C00 100%);
@@ -246,10 +311,10 @@ def render_dual_strategy_card(custom_ticker: str = "", simulation_mode: bool = F
 
         # ========== DETALLES TÉCNICOS (EXPANDER - OCULTO) ==========
         with st.expander("🔍 Ver Detalles Técnicos y Gráficos", expanded=False):
-            st.markdown("### 📊 Análisis Dual: Larry Williams vs Wyckoff")
+            st.markdown("### 📊 Panel de 3 Jueces: Larry Williams | Wyckoff | Estrategia Élite")
 
-            # VISIÓN DOBLE (usando st.columns aquí es SEGURO porque estamos en nivel 2)
-            col_larry, col_wyckoff = st.columns(2)
+            # VISIÓN TRIPLE (usando st.columns aquí es SEGURO porque estamos en nivel 2)
+            col_larry, col_wyckoff, col_elite = st.columns(3)
 
             with col_larry:
                 st.subheader("📊 Larry Williams")
@@ -258,6 +323,10 @@ def render_dual_strategy_card(custom_ticker: str = "", simulation_mode: bool = F
             with col_wyckoff:
                 st.subheader("🐋 Wyckoff")
                 render_wyckoff_card_content(selected_symbol, wyckoff_signal, df_with_indicators)
+
+            with col_elite:
+                st.subheader("🏆 Estrategia Élite")
+                render_elite_card_content(selected_symbol, elite_signal, df_with_indicators)
 
             st.markdown("---")
 
