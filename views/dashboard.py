@@ -111,6 +111,30 @@ def render_dual_strategy_card(custom_ticker: str = "", simulation_mode: bool = F
     Renderiza VISIÓN DOBLE con Mobile-First UI.
     TARJETA PROMINENTE arriba, detalles en expander.
     """
+    # CSS adicional para optimizar móvil
+    st.markdown("""
+    <style>
+    /* Optimizaciones móvil */
+    @media (max-width: 768px) {
+        /* Header más compacto en móvil */
+        h2 {
+            font-size: 1.3em !important;
+            margin-bottom: 0.5em !important;
+        }
+
+        /* Reducir padding en tarjetas en móvil */
+        .element-container {
+            margin-bottom: 0.5em !important;
+        }
+
+        /* Optimizar tamaño de fuente en tarjetas */
+        [data-testid="stMarkdownContainer"] h1 {
+            font-size: 1.8em !important;
+        }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     st.header("🎯 Panel de Control Unificado")
 
     # Determinar símbolo
@@ -347,9 +371,47 @@ def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mod
     if not watchlist_symbols:
         watchlist_symbols = DEFAULT_WATCHLIST
 
+    # ========== CSS RESPONSIVE: OCULTAR SIDEBARS EN MÓVIL ==========
+    st.markdown("""
+    <style>
+    /* Fix Plotly/Streamlit loading issues */
+    .js-plotly-plot, .plotly {
+        width: 100% !important;
+    }
+
+    /* Responsive: Ocultar columnas laterales en móvil */
+    @media (max-width: 768px) {
+        /* Ocultar columnas 1 y 3 (Watchlist y News) en móvil */
+        [data-testid="column"]:first-child,
+        [data-testid="column"]:last-child {
+            display: none !important;
+        }
+
+        /* Hacer columna central (Strategy) 100% width en móvil */
+        [data-testid="column"]:nth-child(2) {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            max-width: 100% !important;
+        }
+
+        /* Ocultar header "Panel de Control Unificado" en móvil */
+        h2:has-text("Panel de Control Unificado") {
+            font-size: 1.2em !important;
+        }
+    }
+
+    /* Desktop: Mantener 3 columnas normales */
+    @media (min-width: 769px) {
+        [data-testid="column"] {
+            display: block !important;
+        }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     # Layout 3 columnas (NIVEL 1 - PERMITIDO)
-    # Dentro de columna central usaremos st.columns (NIVEL 2 - PERMITIDO)
-    # Pero NO usaremos st.columns dentro de las tarjetas (NIVEL 3 - PROHIBIDO -> por eso usamos HTML)
+    # En móvil: CSS oculta col1 y col3, solo muestra col2
+    # En desktop: Muestra las 3 columnas normalmente
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col1:
