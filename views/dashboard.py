@@ -9,6 +9,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 from datetime import datetime, timedelta
 from utils.indicators import TechnicalIndicators, get_support_resistance, fetch_stock_data, fetch_stock_data_alphavantage, generate_synthetic_data
+from utils.data_loader import get_realtime_price, get_company_logo, get_company_name
 
 # ========== CONFIGURACIÓN ==========
 
@@ -49,22 +50,81 @@ def render_ticker_selector(symbols):
 
 # ========== HEADER HERO ==========
 
-def render_hero_header(symbol: str, current_price: float, prev_close: float):
-    """Renderiza header gigante tipo app financiera"""
+def render_hero_header(symbol: str, current_price: float, prev_close: float, api_key: str = "", use_realtime: bool = True):
+    """
+    Renderiza header gigante tipo app financiera con precio real-time.
 
-    price_change = current_price - prev_close
-    price_change_pct = (price_change / prev_close) * 100 if prev_close > 0 else 0
+    Args:
+        symbol: Ticker symbol
+        current_price: Precio del último cierre (fallback)
+        prev_close: Cierre anterior (fallback)
+        api_key: API key de Alpaca para precio real-time
+        use_realtime: Si True, intenta obtener precio real-time
+    """
+
+    # Intentar obtener precio real-time de Alpaca
+    realtime_data = None
+    if use_realtime:
+        realtime_data = get_realtime_price(symbol, api_key=api_key, use_alpaca=True)
+
+    # Usar datos real-time si están disponibles, sino fallback a históricos
+    if realtime_data:
+        price = realtime_data['price']
+        prev = realtime_data['prev_close']
+        change = realtime_data['change']
+        change_pct = realtime_data['change_pct']
+        is_live = True
+        timestamp = realtime_data['timestamp']
+    else:
+        price = current_price
+        prev = prev_close
+        change = price - prev
+        change_pct = (change / prev) * 100 if prev > 0 else 0
+        is_live = False
+        timestamp = "Delayed"
 
     # Color según cambio
-    color = "#00FF88" if price_change >= 0 else "#FF073A"
-    arrow = "▲" if price_change >= 0 else "▼"
+    color = "#00FF88" if change >= 0 else "#FF073A"
+    arrow = "▲" if change >= 0 else "▼"
 
-    # Formatear valores
-    price_str = f"${current_price:.2f}"
-    change_str = f"{arrow} ${abs(price_change):.2f} ({price_change_pct:+.2f}%)"
+    # Obtener logo de la empresa
+    logo_url = get_company_logo(symbol)
+    company_name = get_company_name(symbol)
 
-    # HTML sin indentación para evitar problemas de rendering
-    html_content = f"""<div style='background: linear-gradient(135deg, #1A1D24 0%, #262730 100%); padding: 30px 20px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);'><div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;'><div style='flex: 1; min-width: 120px;'><h1 style='margin: 0; font-size: 48px; font-weight: 900; color: #FFFFFF; letter-spacing: 2px;'>{symbol}</h1><p style='margin: 5px 0 0 0; font-size: 14px; color: #888; font-weight: 500;'>Stock Price</p></div><div style='text-align: right; min-width: 150px;'><div style='font-size: 36px; font-weight: 700; color: #FFFFFF; margin-bottom: 5px;'>{price_str}</div><div style='font-size: 18px; font-weight: 600; color: {color};'>{change_str}</div></div></div></div>"""
+    # Indicador de precio live/delayed
+    live_indicator = "🔴 Live" if is_live else "🕒 Delayed"
+    live_color = "#00FF88" if is_live else "#FFA500"
+
+    # Escapar valores para HTML (prevenir injection y rendering issues)
+    symbol_safe = str(symbol).replace('<', '&lt;').replace('>', '&gt;')
+    price_str = f"${price:.2f}"
+    change_str = f"{arrow} ${abs(change):.2f} ({change_pct:+.2f}%)"
+    company_name_safe = str(company_name).replace('<', '&lt;').replace('>', '&gt;')
+
+    # Logo HTML (solo si existe)
+    logo_html = ""
+    if logo_url:
+        logo_html = f"<img src='{logo_url}' style='width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid #444; margin-right: 15px;' onerror='this.style.display=\"none\"'/>"
+
+    # Construir HTML (formato compacto para evitar problemas de rendering)
+    html_content = f"""
+    <div style='background: linear-gradient(135deg, #1A1D24 0%, #262730 100%); padding: 30px 20px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);'>
+        <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;'>
+            <div style='display: flex; align-items: center; flex: 1; min-width: 200px;'>
+                {logo_html}
+                <div>
+                    <h1 style='margin: 0; font-size: 48px; font-weight: 900; color: #FFFFFF; letter-spacing: 2px;'>{symbol_safe}</h1>
+                    <p style='margin: 5px 0 0 0; font-size: 12px; color: #888; font-weight: 500;'>{company_name_safe}</p>
+                    <p style='margin: 3px 0 0 0; font-size: 11px; color: {live_color}; font-weight: 600;'>{live_indicator} {timestamp}</p>
+                </div>
+            </div>
+            <div style='text-align: right; min-width: 150px;'>
+                <div style='font-size: 36px; font-weight: 700; color: #FFFFFF; margin-bottom: 5px;'>{price_str}</div>
+                <div style='font-size: 18px; font-weight: 600; color: {color};'>{change_str}</div>
+            </div>
+        </div>
+    </div>
+    """
 
     st.markdown(html_content, unsafe_allow_html=True)
 
@@ -492,7 +552,7 @@ def render_dashboard(strategy_mode: str, custom_ticker: str = "", simulation_mod
         strike_ideal = calculate_optimal_strike(current_price)
 
         # ========== 3. HEADER HERO ==========
-        render_hero_header(selected_symbol, current_price, prev_close)
+        render_hero_header(selected_symbol, current_price, prev_close, api_key=api_key, use_realtime=True)
 
         # ========== 4. PANEL SEMÁFORO ==========
         render_semaphore_panel(larry_signal, wyckoff_signal, elite_signal)
