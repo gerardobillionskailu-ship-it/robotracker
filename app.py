@@ -104,6 +104,14 @@ def render_sidebar():
 
             st.markdown("---")
 
+            # Botón de Forzar Actualización
+            if st.button("🔄 Forzar Actualización", use_container_width=True, help="Limpia el caché y recarga los precios en tiempo real"):
+                st.cache_data.clear()
+                st.success("✅ Caché limpiado. Actualizando precios...")
+                st.rerun()
+
+            st.markdown("---")
+
             # Sistema de Listas Temáticas
             st.subheader("📂 Listas Temáticas")
 
