@@ -9,3 +9,7 @@ alpha-vantage==2.3.1
 # Alpaca Trading Bot Dependencies
 alpaca-trade-api==3.0.2
 pytz==2024.1
+
+# Bot Strategy Dependencies (CRITICAL FIX)
+pandas-ta==0.3.14b0
+yfinance==0.2.37
