@@ -1,0 +1,38 @@
+{
+  "strategy_elite": {
+    "name": "Estrategia Élite (Reversión a la Media)",
+    "description": "Tech stocks con RSI < 30 + tendencia alcista de fondo (SMA 200)",
+    "symbols": [
+      "NVDA",
+      "TSLA",
+      "AMD",
+      "AAPL",
+      "MSFT",
+      "META",
+      "COIN"
+    ],
+    "enabled": true
+  },
+  "strategy_rompeolas": {
+    "name": "Estrategia Rompeolas (Breakout Energía)",
+    "description": "Breakout de resistencia 20d + RSI > 50 + Volumen > 150%",
+    "symbols": [
+      "XLE",
+      "OXY",
+      "APA",
+      "CVX",
+      "COP",
+      "SLB",
+      "HAL",
+      "VLO"
+    ],
+    "enabled": true
+  },
+  "account_settings": {
+    "account_size": 1000,
+    "max_contract_cost": 200,
+    "target_delta": 0.60,
+    "expiration_days_min": 45,
+    "expiration_days_max": 60
+  }
+}
