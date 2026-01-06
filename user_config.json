@@ -1,17 +1,43 @@
 {
-  "active_strategy": "rompeolas",
-  "watchlist": ["XLE", "OXY", "APA", "CVX", "COP", "SLB", "HAL", "VLO"],
-  "last_updated": "2026-01-06T00:00:00",
+  "active_strategy": "elite",
+  "watchlist": [
+    "XLE",
+    "OXY",
+    "APA",
+    "CVX",
+    "COP",
+    "SLB",
+    "HAL",
+    "VLO"
+  ],
+  "last_updated": "2026-01-06T19:37:31.824252",
   "strategies": {
     "elite": {
-      "name": "Estrategia Élite (Reversión)",
+      "name": "Estrategia \u00c9lite (Reversi\u00f3n)",
       "description": "Tech stocks con RSI < 30 + tendencia alcista",
-      "default_tickers": ["NVDA", "TSLA", "AMD", "AAPL", "MSFT", "META", "COIN"]
+      "default_tickers": [
+        "NVDA",
+        "TSLA",
+        "AMD",
+        "AAPL",
+        "MSFT",
+        "META",
+        "COIN"
+      ]
     },
     "rompeolas": {
       "name": "Estrategia Rompeolas (Breakout)",
-      "description": "Breakout de energía con RSI > 50 + volumen alto",
-      "default_tickers": ["XLE", "OXY", "APA", "CVX", "COP", "SLB", "HAL", "VLO"]
+      "description": "Breakout de energ\u00eda con RSI > 50 + volumen alto",
+      "default_tickers": [
+        "XLE",
+        "OXY",
+        "APA",
+        "CVX",
+        "COP",
+        "SLB",
+        "HAL",
+        "VLO"
+      ]
     }
   }
 }
