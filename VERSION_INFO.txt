@@ -1,0 +1,10 @@
+✅ Versión estable SIN pandas-ta (funciona en GitHub Actions)
+
+**Esta es la versión correcta para producción.**
+
+Archivos verificados:
+- bot.py: NO usa pandas_ta (usa funciones nativas calcular_rsi/calcular_sma)
+- requirements.txt: NO incluye pandas-ta
+- watchlist.json: Formato simple y limpio
+
+Esta rama debe reemplazar a main en el PR.
