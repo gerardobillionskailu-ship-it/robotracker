@@ -30,6 +30,18 @@ SECTOR_ENERGIA = ['XLE', 'OXY', 'APA', 'CVX', 'VLO', 'HAL', 'COP', 'SLB', 'BKR']
 # Filtro de calidad: Solo analizar acciones con volumen promedio > 1M
 MIN_VOLUME_THRESHOLD = 1_000_000
 
+# ========== FUNCIONES AUXILIARES ==========
+
+def log_message(message):
+    """Escribe mensaje en consola y en archivo bot_logs.txt"""
+    print(message)
+    try:
+        with open('bot_logs.txt', 'a', encoding='utf-8') as f:
+            timestamp = datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%d %H:%M:%S ET')
+            f.write(f"[{timestamp}] {message}\n")
+    except Exception as e:
+        print(f"⚠️ No se pudo escribir log: {e}")
+
 # ========== FUNCIONES DE CONFIGURACIÓN ==========
 
 def load_config():
@@ -46,48 +58,67 @@ def load_config():
             "status": "active"
         }
 
-def load_watchlist():
+def load_user_config():
     """
-    Lee la watchlist desde watchlist.json o trading_config.json
-    Soporta formatos: lista simple o estructurado
+    Lee la configuración desde user_config.json (nuevo archivo centralizado)
+    Este archivo es modificado por la interfaz web y sincronizado con GitHub.
     """
     try:
+        # Prioridad 1: user_config.json (nuevo sistema)
+        if os.path.exists('user_config.json'):
+            with open('user_config.json', 'r') as f:
+                config = json.load(f)
+                log_message(f"✅ Configuración cargada desde user_config.json")
+                log_message(f"   Estrategia activa: {config.get('active_strategy', 'N/A')}")
+                log_message(f"   Última actualización: {config.get('last_updated', 'N/A')}")
+                return config
+
+        # Fallback: watchlist.json (sistema antiguo)
         if os.path.exists('watchlist.json'):
             with open('watchlist.json', 'r') as f:
                 content = f.read()
-                if not content.strip():
-                    return load_config().get('watchlist', DEFAULT_WATCHLIST)
+                if content.strip():
+                    config_data = json.loads(content)
 
-                config_data = json.loads(content)
+                    if isinstance(config_data, list):
+                        return {
+                            'active_strategy': 'modular',
+                            'watchlist': [x.strip().upper() for x in config_data if x.strip()]
+                        }
+                    elif isinstance(config_data, dict):
+                        tickers = []
+                        if 'strategy_elite' in config_data:
+                            tickers.extend(config_data['strategy_elite'].get('symbols', []))
+                        if 'strategy_rompeolas' in config_data:
+                            tickers.extend(config_data['strategy_rompeolas'].get('symbols', []))
+                        return {
+                            'active_strategy': 'modular',
+                            'watchlist': list(set([x.strip().upper() for x in tickers if x.strip()]))
+                        }
 
-                if isinstance(config_data, list):
-                    return [x.strip().upper() for x in config_data if x.strip()]
-                elif isinstance(config_data, dict):
-                    tickers = []
-                    if 'strategy_elite' in config_data and config_data['strategy_elite'].get('enabled', True):
-                        tickers.extend(config_data['strategy_elite'].get('symbols', []))
-                    if 'strategy_rompeolas' in config_data and config_data['strategy_rompeolas'].get('enabled', True):
-                        tickers.extend(config_data['strategy_rompeolas'].get('symbols', []))
-                    return list(set([x.strip().upper() for x in tickers if x.strip()])) or DEFAULT_WATCHLIST
-
-        config = load_config()
-        return config.get('watchlist', DEFAULT_WATCHLIST)
+        # Fallback final: trading_config.json
+        return load_config()
 
     except Exception as e:
-        print(f"⚠️ Error cargando watchlist: {e}. Usando defecto.")
-        return DEFAULT_WATCHLIST
+        log_message(f"⚠️ Error cargando user_config.json: {e}")
+        return load_config()
 
-# ========== FUNCIONES AUXILIARES ==========
-
-def log_message(message):
-    """Escribe mensaje en consola y en archivo bot_logs.txt"""
-    print(message)
+def load_watchlist():
+    """
+    Extrae la watchlist desde la configuración del usuario
+    """
     try:
-        with open('bot_logs.txt', 'a', encoding='utf-8') as f:
-            timestamp = datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%d %H:%M:%S ET')
-            f.write(f"[{timestamp}] {message}\n")
+        config = load_user_config()
+        watchlist = config.get('watchlist', DEFAULT_WATCHLIST)
+
+        if not watchlist:
+            log_message("⚠️ Watchlist vacía, usando default")
+            return DEFAULT_WATCHLIST
+
+        return [x.strip().upper() for x in watchlist if x.strip()]
     except Exception as e:
-        print(f"⚠️ No se pudo escribir log: {e}")
+        log_message(f"⚠️ Error extrayendo watchlist: {e}. Usando defecto.")
+        return DEFAULT_WATCHLIST
 
 def sugerir_contrato_opciones(precio_actual):
     """
