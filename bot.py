@@ -1,13 +1,19 @@
 """
-TradeOlympo - Bot de Trading Autónomo (Arquitectura Modular v3.0)
+TradeOlympo - Bot de Trading Autónomo (Arquitectura Modular v3.1)
 
 ESTRATEGIAS IMPLEMENTADAS:
 1. Estrategia Élite: Reversión a la media para Tech stocks (RSI < 30 + SMA 200)
 2. Estrategia Rompeolas: Breakout de energía (Resistencia 20d + RSI > 50 + Volumen > 150%)
 
-Modo: ANÁLISIS Y RECOMENDACIONES
+Modo: EJECUCIÓN AUTOMÁTICA EN PAPER TRADING
 Fuente de Datos: Alpaca API con feed IEX (gratuito)
-Séptima modificación: Arquitectura modular SIN pandas-ta (usa funciones nativas)
+Ejecución: 10 acciones por señal (Market Order)
+Filtro de Volumen: 100,000 acciones/día promedio
+
+Modificaciones v3.1:
+- Volumen mínimo reducido de 1M a 100K para acciones de energía
+- Ejecución automática activada con api.submit_order()
+- Sincronización de lógica con interfaz web (app.py)
 """
 import os
 import json
@@ -27,8 +33,8 @@ ENDPOINT = os.environ.get('ALPACA_ENDPOINT')
 DEFAULT_WATCHLIST = ["NVDA", "TSLA", "AAPL", "AMD", "MSFT", "XLE", "OXY", "APA", "CVX"]
 SECTOR_ENERGIA = ['XLE', 'OXY', 'APA', 'CVX', 'VLO', 'HAL', 'COP', 'SLB', 'BKR']
 
-# Filtro de calidad: Solo analizar acciones con volumen promedio > 1M
-MIN_VOLUME_THRESHOLD = 1_000_000
+# Filtro de calidad: Solo analizar acciones con volumen promedio > 100K
+MIN_VOLUME_THRESHOLD = 100_000
 
 # ========== FUNCIONES AUXILIARES ==========
 
@@ -217,7 +223,7 @@ def analizar_estrategia_rompeolas(bars, ticker):
 
     # Indicadores usando funciones nativas
     rsi_series = calcular_rsi(closes, period=14)
-    vol_sma = calcular_sma(volumes, 20)
+    vol_sma = calcular_sma(volumes, 30)  # Sincronizado con app.py (30 días)
     resistencia_20d = highs.rolling(20).max().shift(1)
 
     # Valores actuales
@@ -332,13 +338,50 @@ def run_bot():
                 log_message(f"      Tipo: {signal}")
                 log_message(f"      {reason}")
 
-                resultados.append({
-                    "ticker": symbol,
-                    "signal": signal,
-                    "reason": reason,
-                    "price": float(bars.iloc[-1]['close']),
-                    "timestamp": datetime.now().isoformat()
-                })
+                current_price = float(bars.iloc[-1]['close'])
+
+                # EJECUCIÓN REAL: Comprar 10 acciones en Market Order
+                try:
+                    log_message(f"\n   📈 EJECUTANDO ORDEN DE COMPRA:")
+                    log_message(f"      Ticker: {symbol}")
+                    log_message(f"      Cantidad: 10 acciones")
+                    log_message(f"      Tipo: Market Order")
+                    log_message(f"      Precio aproximado: ${current_price:.2f}")
+
+                    order = api.submit_order(
+                        symbol=symbol,
+                        qty=10,
+                        side='buy',
+                        type='market',
+                        time_in_force='day'
+                    )
+
+                    log_message(f"   ✅ ORDEN EJECUTADA EXITOSAMENTE")
+                    log_message(f"      Order ID: {order.id}")
+                    log_message(f"      Status: {order.status}")
+
+                    resultados.append({
+                        "ticker": symbol,
+                        "signal": signal,
+                        "reason": reason,
+                        "price": current_price,
+                        "order_id": order.id,
+                        "order_status": order.status,
+                        "quantity": 10,
+                        "timestamp": datetime.now().isoformat()
+                    })
+
+                except Exception as order_error:
+                    log_message(f"   ❌ ERROR AL EJECUTAR ORDEN: {order_error}")
+                    resultados.append({
+                        "ticker": symbol,
+                        "signal": signal,
+                        "reason": reason,
+                        "price": current_price,
+                        "error": str(order_error),
+                        "timestamp": datetime.now().isoformat()
+                    })
+
             elif signal:
                 log_message(f"   💤 {symbol}: {signal}")
             else:
