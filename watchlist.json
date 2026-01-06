@@ -1,0 +1,19 @@
+{
+  "strategy_elite": {
+    "name": "Estrategia Élite (Reversión a la Media)",
+    "symbols": ["NVDA", "TSLA", "AMD", "COIN", "META", "PLTR"],
+    "enabled": true
+  },
+  "strategy_rompeolas": {
+    "name": "Estrategia Rompeolas (Breakout Energía)",
+    "symbols": ["XLE", "OXY", "APA", "CVX", "COP", "SLB"],
+    "enabled": true
+  },
+  "account_settings": {
+    "account_size": 1000,
+    "max_contract_cost": 200,
+    "target_delta": 0.60,
+    "option_days_to_expiry_min": 45,
+    "option_days_to_expiry_max": 60
+  }
+}
