@@ -3,385 +3,334 @@ TradeOlympo - Bot de Trading Autónomo (Arquitectura Modular v2.0)
 
 ESTRATEGIAS IMPLEMENTADAS:
 1. Estrategia Élite: Reversión a la media para Tech stocks (RSI < 30)
-2. Estrategia Rompeolas: Breakout de energía (Resistencia 20d + RSI > 50 + Volumen alto)
+2. Estrategia Rompeolas: Breakout de energía (Resistencia 20d + RSI > 50 + Volumen > 150%)
 
-Ejecuta COMPRA solo si la estrategia correspondiente aprueba y no hay posición abierta.
+Modo: ANÁLISIS Y RECOMENDACIONES
+Fuente de Datos: Alpaca API (via variables de entorno)
 """
-import os
-import json
-import alpaca_trade_api as tradeapi
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-import pytz
 import pandas_ta as ta
+import json
+import os
+from datetime import datetime, timedelta
 
-# --- CONFIGURACIÓN ---
-API_KEY = os.environ.get('ALPACA_API_KEY')
-SECRET_KEY = os.environ.get('ALPACA_SECRET_KEY')
-ENDPOINT = os.environ.get('ALPACA_ENDPOINT')
+# --- CONFIGURACIÓN INICIAL ---
+DEFAULT_WATCHLIST = ["NVDA", "TSLA", "AAPL", "AMD", "MSFT", "XLE", "OXY", "APA", "CVX"]
+SECTOR_ENERGIA = ['XLE', 'OXY', 'APA', 'CVX', 'VLO', 'HAL', 'COP', 'SLB', 'BKR']
+
+# Filtro de calidad: Solo analizar acciones con volumen promedio > 1M
+MIN_VOLUME_THRESHOLD = 1_000_000
 
 # --- FUNCIONES DE CONFIGURACIÓN ---
 
 def load_watchlist():
-    """Lee la watchlist desde watchlist.json (sincronización con web)"""
+    """
+    Lee la watchlist desde watchlist.json con soporte para múltiples formatos:
+    - Formato simple: ["NVDA", "TSLA", ...]
+    - Formato estructurado: {"strategy_elite": {...}, "strategy_rompeolas": {...}}
+    """
     try:
-        with open('watchlist.json', 'r') as f:
-            config = json.load(f)
-            return config
+        if os.path.exists('watchlist.json'):
+            with open('watchlist.json', 'r') as f:
+                content = f.read()
+                if not content.strip():
+                    return DEFAULT_WATCHLIST
+
+                config = json.loads(content)
+
+                # Detectar formato
+                if isinstance(config, list):
+                    # Formato simple
+                    return [x.strip().upper() for x in config if x.strip()]
+                elif isinstance(config, dict):
+                    # Formato estructurado - extraer todos los tickers
+                    tickers = []
+                    if 'strategy_elite' in config and config['strategy_elite'].get('enabled', True):
+                        tickers.extend(config['strategy_elite'].get('symbols', []))
+                    if 'strategy_rompeolas' in config and config['strategy_rompeolas'].get('enabled', True):
+                        tickers.extend(config['strategy_rompeolas'].get('symbols', []))
+                    return list(set([x.strip().upper() for x in tickers if x.strip()])) or DEFAULT_WATCHLIST
+
+        # Si no existe, crear con formato simple
+        with open('watchlist.json', 'w') as f:
+            json.dump(DEFAULT_WATCHLIST, f, indent=2)
+        return DEFAULT_WATCHLIST
+
     except Exception as e:
-        print(f"⚠️ No se pudo leer watchlist.json: {e}")
-        # Fallback a valores por defecto
-        return {
-            "strategy_elite": {
-                "name": "Estrategia Élite",
-                "symbols": ["NVDA", "TSLA", "AMD"],
-                "enabled": True
-            },
-            "strategy_rompeolas": {
-                "name": "Estrategia Rompeolas",
-                "symbols": ["XLE", "OXY", "CVX"],
-                "enabled": True
-            },
-            "account_settings": {
-                "account_size": 1000,
-                "max_contract_cost": 200,
-                "target_delta": 0.60,
-                "option_days_to_expiry_min": 45,
-                "option_days_to_expiry_max": 60
-            }
-        }
+        print(f"⚠️ Error cargando watchlist: {e}. Usando defecto.")
+        return DEFAULT_WATCHLIST
+
+# --- FUNCIONES DE DATOS (ALPACA API) ---
+
+def fetch_data_alpaca(symbol, days=60):
+    """
+    Descarga datos históricos usando Alpaca API.
+    Lee credenciales desde variables de entorno.
+
+    Returns:
+        pd.DataFrame con columnas: Open, High, Low, Close, Volume
+    """
+    try:
+        import alpaca_trade_api as tradeapi
+
+        # Leer variables de entorno (configuradas en GitHub Actions)
+        api_key = os.environ.get('ALPACA_API_KEY', '')
+        secret_key = os.environ.get('ALPACA_SECRET_KEY', '')
+        endpoint = os.environ.get('ALPACA_ENDPOINT', 'https://paper-api.alpaca.markets')
+
+        if not api_key or not secret_key:
+            print(f"⚠️ Credenciales de Alpaca no configuradas en variables de entorno")
+            return pd.DataFrame()
+
+        # Conectar a Alpaca API
+        api = tradeapi.REST(api_key, secret_key, endpoint, api_version='v2')
+
+        # Calcular fechas
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        # Descargar datos
+        bars = api.get_bars(
+            symbol,
+            tradeapi.TimeFrame.Day,
+            start=start_date.strftime('%Y-%m-%d'),
+            end=end_date.strftime('%Y-%m-%d')
+        ).df
+
+        if bars.empty:
+            return pd.DataFrame()
+
+        # Renombrar columnas para consistencia
+        df = bars.rename(columns={
+            'open': 'Open',
+            'high': 'High',
+            'low': 'Low',
+            'close': 'Close',
+            'volume': 'Volume'
+        })
+
+        # Resetear índice para tener fecha como columna
+        df = df.reset_index()
+        df = df.rename(columns={'timestamp': 'Date'})
+        df = df.set_index('Date')
+
+        return df
+
+    except Exception as e:
+        print(f"❌ Error descargando datos de {symbol}: {e}")
+        return pd.DataFrame()
+
+# --- FUNCIONES AUXILIARES ---
+
+def sugerir_contrato_opciones(precio_actual):
+    """
+    Calcula el contrato ideal bajo gestión de riesgo estricta.
+    - Capital: Cuenta pequeña ($1,000) -> Max costo por contrato $200.
+    - Vencimiento: 45-60 días (Swing).
+    - Strike: ITM (In The Money) para Delta ~0.60.
+    """
+    hoy = datetime.now()
+    fecha_minima = hoy + timedelta(days=45)
+    fecha_maxima = hoy + timedelta(days=60)
+
+    # Formato de fecha para lectura humana
+    rango_fechas = f"{fecha_minima.strftime('%d/%m')} al {fecha_maxima.strftime('%d/%m/%Y')}"
+
+    # Strike ITM: Buscamos un strike aprox 3% debajo del precio actual (Delta ~0.60)
+    strike_objetivo = round(precio_actual * 0.97, 1)
+
+    sugerencia = (
+        f"\n   🎯 PLAN DE EJECUCIÓN (Gestión $1,000):\n"
+        f"      - Vencimiento Objetivo: {rango_fechas}\n"
+        f"      - Strike Sugerido: CALL ${strike_objetivo} (ITM)\n"
+        f"      - Límite de Compra: NO pagar más de $2.00 ($200) por contrato.\n"
+    )
+    return sugerencia
 
 def log_message(message):
     """Escribe mensaje en consola y en archivo bot_logs.txt"""
     print(message)
     try:
         with open('bot_logs.txt', 'a', encoding='utf-8') as f:
-            timestamp = datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%d %H:%M:%S ET')
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             f.write(f"[{timestamp}] {message}\n")
     except Exception as e:
         print(f"⚠️ No se pudo escribir log: {e}")
 
-# --- INDICADORES TÉCNICOS ---
-
-def calcular_rsi(series, period=14):
-    """Calcula RSI usando pandas-ta"""
-    rsi = ta.rsi(series, length=period)
-    return rsi
-
-def calcular_sma(series, window):
-    """Calcula SMA simple"""
-    return series.rolling(window=window).mean()
-
-def calcular_maximos_20d(df):
-    """Calcula máximo de 20 días (resistencia)"""
-    return df['high'].rolling(window=20).max()
-
-def calcular_volumen_promedio(df, window=20):
-    """Calcula volumen promedio de N días"""
-    return df['volume'].rolling(window=window).mean()
-
-# --- ESTRATEGIAS DE TRADING ---
+# --- MÓDULO 1: ESTRATEGIA ÉLITE (Tech / Reversión) ---
 
 def analizar_estrategia_elite(df, ticker):
     """
-    ESTRATEGIA ÉLITE (Reversión a la Media - Tech Stocks)
+    ESTRATEGIA ÉLITE (Reversión a la Media)
+    Enfoque: Swing Trading Clásico / Reversión a la Media.
+    Ideal para: NVDA, TSLA, AAPL en días normales.
 
     Lógica:
-    - RSI < 30 (sobreventa)
-    - Precio > SMA 200 (tendencia alcista general)
-    - Volumen > 1M (liquidez)
-
-    Returns:
-        dict: {'aprobado': bool, 'razon': str, 'precio': float}
+    - RSI < 30 (sobreventa extrema)
+    - Precio > SMA 200 (tendencia alcista de fondo)
     """
-    closes = df['close']
-    current_price = closes.iloc[-1]
-
     # Indicadores
-    rsi = calcular_rsi(closes).iloc[-1]
-    sma_200 = calcular_sma(closes, 200).iloc[-1]
+    df['SMA_20'] = ta.sma(df['Close'], length=20)
+    df['SMA_200'] = ta.sma(df['Close'], length=200) if len(df) >= 200 else ta.sma(df['Close'], length=20)
+    df['RSI'] = ta.rsi(df['Close'], length=14)
 
-    # Filtro de volumen
-    volumes = df['volume']
-    avg_volume_30d = volumes.tail(30).mean()
-    MIN_VOLUME_THRESHOLD = 1_000_000
+    ultimo = df.iloc[-1]
+    signal = None
+    reason = ""
 
-    if avg_volume_30d < MIN_VOLUME_THRESHOLD:
-        return {
-            'aprobado': False,
-            'razon': f'Volumen bajo: {avg_volume_30d:,.0f} < 1M',
-            'precio': current_price
-        }
+    # Lógica de Entrada
+    # 1. Rebote por sobreventa extrema
+    if ultimo['RSI'] < 30:
+        # Verificar tendencia de fondo
+        if ultimo['Close'] > ultimo['SMA_200']:
+            signal = "CALL (Rebote Técnico)"
+            reason = f"Elite: Activo sobrevendido (RSI {ultimo['RSI']:.2f}) en tendencia alcista. Posible rebote a la media."
+        else:
+            signal = "WATCHLIST (RSI Bajo en Downtrend)"
+            reason = f"Elite: RSI {ultimo['RSI']:.2f} bajo pero precio < SMA200. Esperar confirmación."
 
-    # Reglas de Estrategia Élite
-    rsi_sobreventa = rsi < 30
-    tendencia_alcista = current_price > sma_200
+    # 2. Continuación de tendencia (Pullback sano)
+    elif ultimo['Close'] > ultimo['SMA_20'] and 40 < ultimo['RSI'] < 55:
+        # Lógica conservadora, busca entradas cuando el RSI no está caliente
+        signal = "WATCHLIST (Pullback Sano)"
+        reason = f"Elite: Precio sobre SMA20, RSI {ultimo['RSI']:.2f} en zona neutral. Monitorear."
 
-    aprobado = rsi_sobreventa and tendencia_alcista
+    return signal, reason
 
-    if aprobado:
-        razon = f"✅ RSI sobreventa ({rsi:.1f}) + Tendencia alcista (${current_price:.2f} > ${sma_200:.2f})"
-    else:
-        razones = []
-        if not rsi_sobreventa:
-            razones.append(f"RSI no sobreventa ({rsi:.1f})")
-        if not tendencia_alcista:
-            razones.append(f"Sin tendencia alcista (${current_price:.2f} <= ${sma_200:.2f})")
-        razon = " | ".join(razones)
-
-    return {
-        'aprobado': aprobado,
-        'razon': razon,
-        'precio': current_price,
-        'rsi': rsi,
-        'sma_200': sma_200
-    }
+# --- MÓDULO 2: ESTRATEGIA ROMPEOLAS (Energía / Momentum) ---
 
 def analizar_estrategia_rompeolas(df, ticker):
     """
-    ESTRATEGIA ROMPEOLAS (Breakout - Energía)
+    ESTRATEGIA ROMPEOLAS (Breakout con Volumen)
+    Enfoque: Momentum / Breakout con confirmación institucional.
+    Ideal para: XLE, OXY, APA (Crisis energética/política).
 
     Lógica:
     - Precio > Máximo de 20 días (breakout de resistencia)
-    - RSI > 50 (momentum alcista)
-    - Volumen > 150% del promedio de 20 días (confirmación de fuerza)
-
-    Returns:
-        dict: {'aprobado': bool, 'razon': str, 'precio': float}
+    - RSI > 50 (fuerza alcista, no rebote)
+    - Volumen > 150% del promedio (confirmación institucional)
     """
-    closes = df['close']
-    highs = df['high']
-    volumes = df['volume']
-
-    current_price = closes.iloc[-1]
-    current_volume = volumes.iloc[-1]
-
     # Indicadores
-    rsi = calcular_rsi(closes).iloc[-1]
-    resistencia_20d = calcular_maximos_20d(df).iloc[-2]  # Día anterior (no incluye hoy)
-    volumen_promedio_20d = calcular_volumen_promedio(df).iloc[-1]
+    df['RSI'] = ta.rsi(df['Close'], length=14)
+    df['Vol_SMA'] = ta.sma(df['Volume'], length=20)
+    # Resistencia: Máximo de los últimos 20 días (sin incluir hoy)
+    df['Resistencia_20d'] = df['High'].rolling(20).max().shift(1)
 
-    # Reglas de Estrategia Rompeolas
-    breakout_resistencia = current_price > resistencia_20d
-    momentum_alcista = rsi > 50
-    volumen_alto = current_volume > (volumen_promedio_20d * 1.5)
+    ultimo = df.iloc[-1]
+    signal = None
+    reason = ""
 
-    aprobado = breakout_resistencia and momentum_alcista and volumen_alto
+    # --- Lógica de Disparo (Trigger) ---
 
-    if aprobado:
-        razon = f"✅ Breakout (${current_price:.2f} > ${resistencia_20d:.2f}) + RSI ({rsi:.1f}) + Volumen ({current_volume:,.0f} > {volumen_promedio_20d * 1.5:,.0f})"
-    else:
-        razones = []
-        if not breakout_resistencia:
-            razones.append(f"Sin breakout (${current_price:.2f} <= ${resistencia_20d:.2f})")
-        if not momentum_alcista:
-            razones.append(f"RSI débil ({rsi:.1f})")
-        if not volumen_alto:
-            razones.append(f"Volumen insuficiente ({current_volume:,.0f})")
-        razon = " | ".join(razones)
+    # 1. Ruptura (Breakout): Precio cierra por encima del techo de 20 días
+    breakout = ultimo['Close'] > ultimo['Resistencia_20d']
 
-    return {
-        'aprobado': aprobado,
-        'razon': razon,
-        'precio': current_price,
-        'rsi': rsi,
-        'resistencia_20d': resistencia_20d,
-        'volumen_actual': current_volume,
-        'volumen_promedio': volumen_promedio_20d
-    }
+    # 2. Pico de Volumen Institucional: Volumen hoy > 150% del promedio
+    volumen_institucional = ultimo['Volume'] > (ultimo['Vol_SMA'] * 1.5)
 
-# --- GESTIÓN DE RIESGO (OPCIONES) ---
+    # 3. Fuerza: RSI > 50 (No queremos rebotes, queremos fuerza)
+    fuerza = ultimo['RSI'] > 50
 
-def sugerir_contrato_opciones(precio_actual, account_settings):
-    """
-    Sugiere contrato de opciones para cuenta pequeña
+    if breakout and fuerza:
+        if volumen_institucional:
+            signal = "CALL (ROMPEOLAS CONFIRMADO)"
+            # Generamos la sugerencia del contrato específico
+            contrato = sugerir_contrato_opciones(ultimo['Close'])
 
-    Args:
-        precio_actual: Precio actual de la acción
-        account_settings: Configuración de cuenta desde watchlist.json
+            reason = (
+                f"🌊 BREAKOUT CON VOLUMEN EN {ticker}\n"
+                f"   - Precio: ${ultimo['Close']:.2f} rompió resistencia de ${ultimo['Resistencia_20d']:.2f}\n"
+                f"   - Volumen: {int(ultimo['Volume']):,} (>150% del promedio)\n"
+                f"   - RSI: {ultimo['RSI']:.2f} (Tendencia fuerte)"
+                f"{contrato}"
+            )
+        else:
+            # Si rompe pero sin volumen, alerta suave
+            signal = "WATCHLIST (Breakout sin Volumen)"
+            reason = f"Rompeolas: Breakout de ${ultimo['Resistencia_20d']:.2f} pero volumen insuficiente. Monitorear."
 
-    Returns:
-        dict: Sugerencia de strike, vencimiento, costo estimado
-    """
-    max_cost = account_settings.get('max_contract_cost', 200)
-    target_delta = account_settings.get('target_delta', 0.60)
-    days_min = account_settings.get('option_days_to_expiry_min', 45)
-    days_max = account_settings.get('option_days_to_expiry_max', 60)
+    return signal, reason
 
-    # Calcular strike ITM (Delta ~0.60)
-    # Aproximación: Strike = Precio actual * (1 - 0.03) para Delta ~0.60
-    strike_itm = round(precio_actual * 0.97, 2)
-
-    # Estimar costo de contrato (5-8% del precio de la acción para ITM 45-60 días)
-    costo_estimado = precio_actual * 0.06  # 6% promedio
-    costo_contrato = round(costo_estimado * 100, 2)  # Multiplicador de 100
-
-    # Calcular fecha de vencimiento (60 días desde hoy, buscar viernes)
-    fecha_objetivo = datetime.now() + timedelta(days=60)
-    # Ajustar a viernes más cercano
-    days_until_friday = (4 - fecha_objetivo.weekday()) % 7
-    fecha_vencimiento = fecha_objetivo + timedelta(days=days_until_friday)
-
-    # Validar si el contrato cabe en el presupuesto
-    dentro_presupuesto = costo_contrato <= max_cost
-
-    return {
-        'strike': strike_itm,
-        'vencimiento': fecha_vencimiento.strftime('%Y-%m-%d'),
-        'costo_estimado': costo_contrato,
-        'dentro_presupuesto': dentro_presupuesto,
-        'delta_objetivo': target_delta,
-        'tipo': 'CALL ITM'
-    }
-
-# --- CEREBRO DEL BOT ---
+# --- FUNCIÓN PRINCIPAL (ORQUESTADOR) ---
 
 def run_bot():
-    """Función principal del bot con arquitectura modular"""
-    log_message(f"\n{'='*60}")
-    log_message(f"🚀 INICIANDO BOT TRADOLYMPO v2.0 - {datetime.now()}")
-    log_message(f"{'='*60}")
+    """Función principal del bot con arquitectura híbrida"""
+    log_message("=" * 60)
+    log_message(f"🤖 INICIANDO TRADEOLYMPO AUTO-BOT")
+    log_message(f"📅 Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    log_message("=" * 60)
 
-    if not API_KEY or not SECRET_KEY:
-        log_message("❌ ERROR: No hay API KEYS de Alpaca configuradas.")
-        return
+    # 1. Cargar Watchlist (compatible con múltiples formatos)
+    watchlist = load_watchlist()
+    log_message(f"📋 Tickers a analizar ({len(watchlist)}): {', '.join(watchlist)}\n")
 
-    # Cargar configuración de watchlist
-    config = load_watchlist()
-    account_settings = config.get('account_settings', {})
+    resultados = []
 
-    log_message(f"💰 Cuenta: ${account_settings.get('account_size', 1000)}")
-    log_message(f"💵 Máximo por contrato: ${account_settings.get('max_contract_cost', 200)}\n")
+    # 2. Bucle de Análisis
+    for ticker in watchlist:
+        try:
+            log_message(f"\n🔍 Analizando {ticker}...")
 
-    api = tradeapi.REST(API_KEY, SECRET_KEY, ENDPOINT, api_version='v2')
+            # Descargar datos usando Alpaca API (60 días)
+            df = fetch_data_alpaca(ticker, days=60)
 
-    # Fecha de inicio para datos históricos
-    fecha_inicio = (datetime.now() - timedelta(days=700)).strftime('%Y-%m-%d')
+            if df.empty or len(df) < 20:
+                log_message(f"   ❌ Datos insuficientes ({len(df)} días)")
+                continue
 
-    # ========== ESTRATEGIA ÉLITE ==========
-    if config.get('strategy_elite', {}).get('enabled', False):
-        elite_symbols = config.get('strategy_elite', {}).get('symbols', [])
-        log_message(f"\n📊 ESTRATEGIA ÉLITE (Reversión a la Media)")
-        log_message(f"Tickers: {', '.join(elite_symbols)}")
-        log_message("-" * 60)
+            # --- FILTRO DE CALIDAD: Volumen promedio ---
+            avg_volume = df['Volume'].mean()
+            if avg_volume < MIN_VOLUME_THRESHOLD:
+                log_message(f"   ⏭️ VOLUMEN BAJO: {int(avg_volume):,} < {MIN_VOLUME_THRESHOLD:,} (Skipping)")
+                continue
 
-        for symbol in elite_symbols:
-            try:
-                log_message(f"\n🔍 Analizando {symbol} (Élite)...")
+            # --- SELECTOR DE MÓDULO (CEREBRO) ---
+            signal = None
+            reason = ""
 
-                bars = api.get_bars(
-                    symbol,
-                    tradeapi.TimeFrame.Day,
-                    start=fecha_inicio,
-                    limit=300,
-                    feed='iex'
-                ).df
+            if ticker in SECTOR_ENERGIA:
+                # Usa Estrategia Rompeolas
+                log_message(f"   🌊 Aplicando Estrategia Rompeolas (Energía)")
+                signal, reason = analizar_estrategia_rompeolas(df, ticker)
+            else:
+                # Usa Estrategia Élite (Tech/General)
+                log_message(f"   🏆 Aplicando Estrategia Élite (Tech)")
+                signal, reason = analizar_estrategia_elite(df, ticker)
 
-                if len(bars) < 200:
-                    log_message(f"   ⚠️ Historial insuficiente ({len(bars)} días). Saltando.")
-                    continue
+            # --- PROCESAR RESULTADOS ---
+            if signal and "CALL" in signal:
+                log_message(f"\n   🚀 SEÑAL ENCONTRADA: {ticker}")
+                log_message(f"      Tipo: {signal}")
+                log_message(f"      {reason}")
 
-                # Analizar con Estrategia Élite
-                resultado = analizar_estrategia_elite(bars, symbol)
+                resultados.append({
+                    "ticker": ticker,
+                    "signal": signal,
+                    "reason": reason,
+                    "price": float(df.iloc[-1]['Close']),
+                    "timestamp": datetime.now().isoformat()
+                })
+            elif signal:
+                log_message(f"   💤 {ticker}: {signal}")
+            else:
+                log_message(f"   💤 Sin señal clara")
 
-                log_message(f"   {resultado['razon']}")
+        except Exception as e:
+            log_message(f"   ⚠️ Error procesando {ticker}: {e}")
 
-                if resultado['aprobado']:
-                    # Verificar posición existente
-                    try:
-                        pos = api.get_position(symbol)
-                        if int(pos.qty) > 0:
-                            log_message("   ✋ Ya tenemos posición. Mantener.")
-                            continue
-                    except:
-                        pass
+    # 3. Guardar Resultados
+    # Esto permite que Streamlit (la web) lea lo que encontró el bot
+    try:
+        with open('last_run_results.json', 'w') as f:
+            json.dump(resultados, f, indent=4)
+        log_message(f"\n💾 Resultados guardados en 'last_run_results.json'")
+        log_message(f"   Total de señales: {len(resultados)}")
+    except Exception as e:
+        log_message(f"❌ Error guardando resultados: {e}")
 
-                    # Sugerir contrato de opciones
-                    opcion = sugerir_contrato_opciones(resultado['precio'], account_settings)
-
-                    log_message(f"\n   💡 SUGERENCIA DE OPCIONES:")
-                    log_message(f"      - Strike: ${opcion['strike']} CALL (ITM)")
-                    log_message(f"      - Vencimiento: {opcion['vencimiento']}")
-                    log_message(f"      - Costo estimado: ${opcion['costo_estimado']:.2f}")
-                    log_message(f"      - Estado: {'✅ Dentro de presupuesto' if opcion['dentro_presupuesto'] else '❌ Fuera de presupuesto'}")
-
-                    # Ejecutar orden de acción (1 acción)
-                    api.submit_order(
-                        symbol=symbol,
-                        qty=1,
-                        side='buy',
-                        type='market',
-                        time_in_force='day'
-                    )
-                    log_message(f"\n   🚀 ORDEN EJECUTADA: Compra de 1 acción de {symbol}")
-
-            except Exception as e:
-                log_message(f"   ❌ Error en {symbol}: {e}")
-
-    # ========== ESTRATEGIA ROMPEOLAS ==========
-    if config.get('strategy_rompeolas', {}).get('enabled', False):
-        rompeolas_symbols = config.get('strategy_rompeolas', {}).get('symbols', [])
-        log_message(f"\n\n⚡ ESTRATEGIA ROMPEOLAS (Breakout Energía)")
-        log_message(f"Tickers: {', '.join(rompeolas_symbols)}")
-        log_message("-" * 60)
-
-        for symbol in rompeolas_symbols:
-            try:
-                log_message(f"\n🔍 Analizando {symbol} (Rompeolas)...")
-
-                bars = api.get_bars(
-                    symbol,
-                    tradeapi.TimeFrame.Day,
-                    start=fecha_inicio,
-                    limit=300,
-                    feed='iex'
-                ).df
-
-                if len(bars) < 200:
-                    log_message(f"   ⚠️ Historial insuficiente ({len(bars)} días). Saltando.")
-                    continue
-
-                # Analizar con Estrategia Rompeolas
-                resultado = analizar_estrategia_rompeolas(bars, symbol)
-
-                log_message(f"   {resultado['razon']}")
-
-                if resultado['aprobado']:
-                    # Verificar posición existente
-                    try:
-                        pos = api.get_position(symbol)
-                        if int(pos.qty) > 0:
-                            log_message("   ✋ Ya tenemos posición. Mantener.")
-                            continue
-                    except:
-                        pass
-
-                    # Sugerir contrato de opciones
-                    opcion = sugerir_contrato_opciones(resultado['precio'], account_settings)
-
-                    log_message(f"\n   💡 SUGERENCIA DE OPCIONES:")
-                    log_message(f"      - Strike: ${opcion['strike']} CALL (ITM)")
-                    log_message(f"      - Vencimiento: {opcion['vencimiento']}")
-                    log_message(f"      - Costo estimado: ${opcion['costo_estimado']:.2f}")
-                    log_message(f"      - Estado: {'✅ Dentro de presupuesto' if opcion['dentro_presupuesto'] else '❌ Fuera de presupuesto'}")
-
-                    # Ejecutar orden de acción (1 acción)
-                    api.submit_order(
-                        symbol=symbol,
-                        qty=1,
-                        side='buy',
-                        type='market',
-                        time_in_force='day'
-                    )
-                    log_message(f"\n   🚀 ORDEN EJECUTADA: Compra de 1 acción de {symbol}")
-
-            except Exception as e:
-                log_message(f"   ❌ Error en {symbol}: {e}")
-
-    log_message(f"\n{'='*60}")
-    log_message(f"✅ FIN DEL ANÁLISIS - {datetime.now()}")
-    log_message(f"{'='*60}\n")
+    log_message("\n" + "=" * 60)
+    log_message("✅ FIN DEL ANÁLISIS")
+    log_message("=" * 60 + "\n")
 
 if __name__ == "__main__":
     run_bot()
