@@ -1,16 +1,15 @@
 {
   "active_strategy": "elite",
   "watchlist": [
-    "XLE",
-    "OXY",
-    "APA",
-    "CVX",
-    "COP",
-    "SLB",
-    "HAL",
-    "VLO"
+    "NVDA",
+    "TSLA",
+    "AMD",
+    "AAPL",
+    "MSFT",
+    "META",
+    "COIN"
   ],
-  "last_updated": "2026-01-06T19:57:43.511636",
+  "last_updated": "2026-01-06T19:57:58.451696",
   "strategies": {
     "elite": {
       "name": "Estrategia \u00c9lite (Reversi\u00f3n)",
