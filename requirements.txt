@@ -9,3 +9,6 @@ alpha-vantage==2.3.1
 # Alpaca Trading Bot Dependencies
 alpaca-trade-api==3.0.2
 pytz==2024.1
+
+# GitHub Integration (para guardar config desde la web)
+PyGithub==2.1.1
