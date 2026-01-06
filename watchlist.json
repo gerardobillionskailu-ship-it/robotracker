@@ -1,0 +1,12 @@
+{
+  "strategy_elite": {
+    "name": "Estrategia Élite (Reversión a la Media)",
+    "symbols": ["NVDA", "TSLA", "AMD", "AAPL", "MSFT", "META", "COIN"],
+    "enabled": true
+  },
+  "strategy_rompeolas": {
+    "name": "Estrategia Rompeolas (Breakout Energía)",
+    "symbols": ["XLE", "OXY", "APA", "CVX", "COP", "SLB", "HAL", "VLO"],
+    "enabled": true
+  }
+}
