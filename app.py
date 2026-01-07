@@ -1026,9 +1026,9 @@ def main():
         # Radar Panorámico eliminado (solo importa bot_strategy)
 
         # Obtener credenciales de Alpaca
-    api_key = st.secrets.get("ALPACA_API_KEY", os.environ.get('ALPACA_API_KEY'))
-    secret_key = st.secrets.get("ALPACA_SECRET_KEY", os.environ.get('ALPACA_SECRET_KEY'))
-    endpoint = st.secrets.get("ALPACA_ENDPOINT", os.environ.get('ALPACA_ENDPOINT', 'https://paper-api.alpaca.markets'))
+        api_key = st.secrets.get("ALPACA_API_KEY", os.environ.get('ALPACA_API_KEY'))
+        secret_key = st.secrets.get("ALPACA_SECRET_KEY", os.environ.get('ALPACA_SECRET_KEY'))
+        endpoint = st.secrets.get("ALPACA_ENDPOINT", os.environ.get('ALPACA_ENDPOINT', 'https://paper-api.alpaca.markets'))
 
         if not api_key or not secret_key:
             st.error("""
