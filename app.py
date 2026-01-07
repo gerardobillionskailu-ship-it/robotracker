@@ -875,9 +875,53 @@ def render_independent_monitoring_radar():
 
     return monitor_watchlist  # Ya no necesitamos view_strategy
 
+def calculate_contract_details(ticker, price, winning_strategy):
+    """Calcula detalles del contrato sugerido según la estrategia ganadora"""
+    from datetime import datetime, timedelta
+    
+    # Configuración según estrategia
+    if winning_strategy == 'rompeolas':
+        strike_otm_percent = 1.03  # 3% OTM (alcista agresivo)
+        days_to_expiration = 45
+        stop_loss_percent = 0.95  # -5%
+        take_profit_percent = 1.15  # +15%
+    elif winning_strategy == 'elite':
+        strike_otm_percent = 0.97  # 3% ITM (conservador)
+        days_to_expiration = 30
+        stop_loss_percent = 0.93  # -7%
+        take_profit_percent = 1.12  # +12%
+    elif winning_strategy == 'larry':
+        strike_otm_percent = 1.00  # ATM (neutral)
+        days_to_expiration = 30
+        stop_loss_percent = 0.95  # -5%
+        take_profit_percent = 1.10  # +10%
+    else:  # wyckoff
+        strike_otm_percent = 1.02  # 2% OTM
+        days_to_expiration = 45
+        stop_loss_percent = 0.94  # -6%
+        take_profit_percent = 1.12  # +12%
+    
+    strike_price = price * strike_otm_percent
+    expiration_date = datetime.now() + timedelta(days=days_to_expiration)
+    stop_loss = price * stop_loss_percent
+    take_profit = price * take_profit_percent
+    
+    # Redondear strike al múltiplo de $5 más cercano (estándar de mercado)
+    strike_price = round(strike_price / 5) * 5
+    
+    return {
+        'strike': strike_price,
+        'expiration': expiration_date.strftime('%Y-%m-%d'),
+        'days': days_to_expiration,
+        'stop_loss': stop_loss,
+        'take_profit': take_profit,
+        'entry_price': price
+    }
+
 def render_trading_table_panoramic(df_signals):
-    """Tabla Panorámica: Todas las estrategias visibles simultáneamente"""
+    """Tabla Panorámica con patrón Master-Detail: Tabla limpia + Detalles al seleccionar"""
     st.markdown("### 📊 Radar Panorámico - Vista de Todos los Jueces")
+    st.info("💡 **Interactivo:** Haz clic en cualquier fila para ver detalles del contrato sugerido")
 
     # Función helper para iconos
     def signal_to_icon(signal):
@@ -906,24 +950,17 @@ def render_trading_table_panoramic(df_signals):
 
     display_df = pd.DataFrame(display_data)
 
-    # Aplicar colores
-    def color_icon(val):
-        if '🟢' in str(val):
-            return 'background-color: #10B981; color: white; font-weight: bold;'
-        elif '🔴' in str(val):
-            return 'background-color: #EF4444; color: white; font-weight: bold;'
-        elif '🟡' in str(val):
-            return 'background-color: #F59E0B; color: white; font-weight: bold;'
-        else:
-            return 'background-color: #374151; color: #D1D5DB;'
+    # MASTER: Tabla interactiva con selección
+    event = st.dataframe(
+        display_df,
+        use_container_width=True,
+        height=500,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="radar_table"
+    )
 
-    # Aplicar estilo a columnas de jueces
-    juez_columns = ['🌊 Rompeolas', '🏆 Élite', '📈 Larry', '📊 Wyckoff']
-    styled_df = display_df.style.applymap(color_icon, subset=juez_columns)
-    
-    st.dataframe(styled_df, use_container_width=True, height=500)
-
-    # Resumen rápido
+    # Resumen rápido (siempre visible)
     st.markdown("### 🎯 Consenso de Jueces")
     
     col1, col2, col3, col4 = st.columns(4)
@@ -943,6 +980,109 @@ def render_trading_table_panoramic(df_signals):
     with col4:
         calls_wyckoff = sum('🟢' in str(row['📊 Wyckoff']) for _, row in display_df.iterrows())
         st.metric("📊 Wyckoff CALL", calls_wyckoff)
+
+    # DETAIL: Tarjeta de oportunidad (solo si hay selección)
+    if event.selection.rows:
+        selected_row_idx = event.selection.rows[0]
+        selected_ticker = display_df.iloc[selected_row_idx]['Ticker']
+        
+        # Obtener datos originales del ticker seleccionado
+        ticker_data = df_signals[df_signals['symbol'] == selected_ticker].iloc[0]
+        
+        # Determinar qué estrategia dio CALL (prioridad: Rompeolas > Elite > Larry > Wyckoff)
+        winning_strategy = None
+        winning_signal = None
+        winning_reason = None
+        
+        if ticker_data['rompeolas_signal'] == 'CALL':
+            winning_strategy = 'rompeolas'
+            winning_signal = ticker_data['rompeolas_signal']
+            winning_reason = ticker_data.get('rompeolas_reason', 'Sin detalles')
+        elif ticker_data['elite_signal'] == 'CALL':
+            winning_strategy = 'elite'
+            winning_signal = ticker_data['elite_signal']
+            winning_reason = ticker_data.get('elite_reason', 'Sin detalles')
+        elif ticker_data['larry_signal'] == 'CALL':
+            winning_strategy = 'larry'
+            winning_signal = ticker_data['larry_signal']
+            winning_reason = ticker_data.get('larry_reason', 'Sin detalles')
+        elif ticker_data['wyckoff_signal'] == 'CALL':
+            winning_strategy = 'wyckoff'
+            winning_signal = ticker_data['wyckoff_signal']
+            winning_reason = ticker_data.get('wyckoff_reason', 'Sin detalles')
+        
+        # Si hay señal CALL, mostrar tarjeta de oportunidad
+        if winning_strategy:
+            st.markdown("---")
+            st.markdown(f"## 🎯 Análisis de Oportunidad: **{selected_ticker}**")
+            
+            # Calcular detalles del contrato
+            contract = calculate_contract_details(
+                selected_ticker,
+                ticker_data['price'],
+                winning_strategy
+            )
+            
+            # Mapeo de estrategias a nombres legibles
+            strategy_names = {
+                'rompeolas': '🌊 Rompeolas',
+                'elite': '🏆 Élite',
+                'larry': '📈 Larry Williams',
+                'wyckoff': '📊 Wyckoff'
+            }
+            
+            # Tarjeta destacada
+            st.success(f"""
+### ✅ Señal de Compra Detectada
+
+**🎖️ Estrategia Ganadora:** {strategy_names.get(winning_strategy, winning_strategy.upper())}
+
+**📊 Fundamento:**
+{winning_reason}
+            """)
+            
+            # Columnas para detalles
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("#### 💰 Contrato Sugerido")
+                st.markdown(f"""
+**Tipo:** CALL  
+**Strike:** ${contract['strike']:.2f}  
+**Vencimiento:** {contract['expiration']} ({contract['days']} días)  
+                """)
+            
+            with col2:
+                st.markdown("#### 📈 Precios Clave")
+                st.markdown(f"""
+**Entrada:** ${contract['entry_price']:.2f}  
+**Stop Loss:** ${contract['stop_loss']:.2f} ({((contract['stop_loss']/contract['entry_price']-1)*100):.1f}%)  
+**Take Profit:** ${contract['take_profit']:.2f} (+{((contract['take_profit']/contract['entry_price']-1)*100):.1f}%)  
+                """)
+            
+            with col3:
+                st.markdown("#### 🔔 Acción")
+                contract_code = f"{selected_ticker} {contract['expiration'].replace('-', '')} C{contract['strike']:.0f}"
+                st.code(contract_code, language=None)
+                st.caption("Copia este código para tu broker")
+                
+                if st.button("📋 Copiar Contrato", use_container_width=True):
+                    st.info(f"✅ Copiado: {contract_code}")
+            
+            # Advertencia de riesgo
+            st.warning("""
+⚠️ **Disclaimer:** Esta es una señal automatizada basada en análisis técnico. 
+No constituye asesoría financiera. Opera bajo tu propio riesgo y considera tu tolerancia al riesgo.
+            """)
+        
+        else:
+            # Ticker seleccionado pero sin señal CALL
+            st.info(f"""
+### ℹ️ {selected_ticker} - Sin Señales Activas
+
+Ninguno de los jueces ha emitido señal de CALL para este ticker en este momento.
+Monitorea los cambios de mercado para nuevas oportunidades.
+            """)
 
 # ========== MAIN ==========
 
