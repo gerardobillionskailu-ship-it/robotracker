@@ -533,9 +533,10 @@ def run_bot():
             # Obtener estrategia activa desde configuración
             active_strategy = config.get('active_strategy', 'rompeolas')
 
-            # ========== MODO CENTINELA: Ejecutar TODAS las estrategias principales ==========
+            # ========== MODO CENTINELA: Ejecutar TODAS las estrategias de trading ==========
             if active_strategy == 'centinela':
                 log_message(f"   🛡️ Aplicando Modo Centinela (Vigilancia Total)")
+                log_message(f"      Ejecutando análisis con 4 jueces de trading...")
                 
                 # Probar Elite
                 signal_elite, reason_elite = analizar_estrategia_elite(bars, symbol)
@@ -545,19 +546,38 @@ def run_bot():
                 signal_rompeolas, reason_rompeolas = analizar_estrategia_rompeolas(bars, symbol)
                 log_message(f"      🌊 Rompeolas: {signal_rompeolas or 'Sin señal'}")
                 
-                # Si alguna da CALL, se dispara (prioridad: Rompeolas > Elite)
+                # Probar The Wheel
+                signal_wheel, reason_wheel = analizar_estrategia_wheel(api, symbol)
+                log_message(f"      🔄 The Wheel: {signal_wheel or 'Sin señal'}")
+                
+                # Probar ORB
+                signal_orb, reason_orb = analizar_estrategia_orb(api, symbol)
+                log_message(f"      ⚡ ORB: {signal_orb or 'Sin señal'}")
+                
+                # Prioridad de disparo: Rompeolas > Elite > Wheel > ORB
+                # Si alguna da CALL, se dispara
                 if signal_rompeolas and "CALL" in signal_rompeolas:
                     signal = signal_rompeolas
                     reason = reason_rompeolas
-                    triggered_strategy = 'rompeolas'
+                    triggered_strategy = 'centinela → rompeolas'
                     log_message(f"      ✅ TRIGGER ACTIVADO por ROMPEOLAS")
                 elif signal_elite and "CALL" in signal_elite:
                     signal = signal_elite
                     reason = reason_elite
-                    triggered_strategy = 'elite'
+                    triggered_strategy = 'centinela → elite'
                     log_message(f"      ✅ TRIGGER ACTIVADO por ÉLITE")
+                elif signal_wheel and "CALL" in signal_wheel:
+                    signal = signal_wheel
+                    reason = reason_wheel
+                    triggered_strategy = 'centinela → wheel'
+                    log_message(f"      ✅ TRIGGER ACTIVADO por THE WHEEL")
+                elif signal_orb and "CALL" in signal_orb:
+                    signal = signal_orb
+                    reason = reason_orb
+                    triggered_strategy = 'centinela → orb'
+                    log_message(f"      ✅ TRIGGER ACTIVADO por ORB")
                 else:
-                    triggered_strategy = 'centinela'
+                    triggered_strategy = 'centinela
 
             # ========== MODOS INDIVIDUALES ==========
             elif active_strategy == 'wheel':
