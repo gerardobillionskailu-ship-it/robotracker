@@ -477,14 +477,14 @@ def render_strategy_education(strategy_key, use_expander=True):
             "how": """
 **Cómo funciona:**
 
-1. El bot analiza cada ticker con **Élite** y **Rompeolas**
-2. Si **cualquiera** de las dos da señal CALL → Ejecuta compra
+1. El bot analiza cada ticker con **4 estrategias**: Elite, Rompeolas, The Wheel, ORB
+2. Si **cualquiera** de las estrategias da señal CALL → Ejecuta compra inmediata
 3. Registra en historial qué estrategia específica disparó (ej: "centinela → rompeolas")
 
 **Ventajas:**
 - No te pierdes oportunidades por estar en "modo equivocado"
-- Cobertura total: Tech (Elite) + Energía (Rompeolas)
-- Una sola configuración, cero mantenimiento
+- Cobertura total: Tech (Elite) + Energía (Rompeolas) + Opciones (Wheel) + Day Trading (ORB)
+- Una sola configuración, cero mantenimiento, máxima eficiencia
 
 **Tipo de operación:** Compra de acciones (10 shares por señal)
             """,
@@ -605,6 +605,18 @@ def render_strategy_education(strategy_key, use_expander=True):
 
     if strategy_key in education_content:
         info = education_content[strategy_key]
+        
+        # AVISOS DE RECOMENDACIÓN TÉCNICA
+        recommendations = {
+            'elite': '💡 **Recomendado para Big Tech (NVDA, TSLA, AMD)** por su alta volatilidad y reversión rápida.',
+            'rompeolas': '💡 **Recomendado para Energía y Commodities (XLE, CVX, OXY, SLB)** por sus tendencias sólidas de ruptura.',
+            'wheel': '💡 **Recomendado para acciones estables de alta capitalización (AAPL, MSFT, SPY)** para recolectar prima con Theta decay.',
+            'centinela': '🔥 **Modo de MÁXIMA EFICIENCIA**: Cubre todos los sectores y estrategias simultáneamente. Ideal para no perder ninguna oportunidad.',
+            'orb': '⚡ **Recomendado para traders activos con $25K+** que puedan operar durante horas de mercado (9:30am-4pm ET).'
+        }
+        
+        if strategy_key in recommendations:
+            st.info(recommendations[strategy_key])
 
         if use_expander:
             # Modo normal: usar expander
