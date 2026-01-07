@@ -1,19 +1,22 @@
 """
-TradeOlympo - Bot de Trading Autónomo (Arquitectura Modular v3.1)
+TradeOlympo - Bot de Trading Autónomo (Arquitectura Modular v3.1-TEST)
+
+⚠️⚠️⚠️ MODO TEST DE CONEXIÓN ACTIVADO ⚠️⚠️⚠️
 
 ESTRATEGIAS IMPLEMENTADAS:
 1. Estrategia Élite: Reversión a la media para Tech stocks (RSI < 30 + SMA 200)
 2. Estrategia Rompeolas: Breakout de energía (Resistencia 20d + RSI > 50 + Volumen > 150%)
 
-Modo: EJECUCIÓN AUTOMÁTICA EN PAPER TRADING
+Modo: TEST DE SISTEMA - COMPRA FORZADA DE OXY
 Fuente de Datos: Alpaca API con feed IEX (gratuito)
-Ejecución: 10 acciones por señal (Market Order)
+Ejecución: 1 acción de OXY (compra forzada para verificar submit_order)
 Filtro de Volumen: 100,000 acciones/día promedio
 
-Modificaciones v3.1:
-- Volumen mínimo reducido de 1M a 100K para acciones de energía
-- Ejecución automática activada con api.submit_order()
-- Sincronización de lógica con interfaz web (app.py)
+TEST TEMPORAL:
+- OXY: Compra forzada (ignora condiciones de mercado)
+- Cantidad: 1 acción (en lugar de 10)
+- Objetivo: Verificar que api.submit_order() funciona en Dashboard de Alpaca
+- REVERTIR después de confirmar ejecución exitosa
 """
 import os
 import json
@@ -240,6 +243,23 @@ def analizar_estrategia_rompeolas(bars, ticker):
     if pd.isna(rsi) or pd.isna(resistencia) or pd.isna(vol_sma_val):
         return signal, reason
 
+    # ========== TEST DE CONEXIÓN (TEMPORAL) ==========
+    # FORZAR COMPRA DE OXY PARA VERIFICAR submit_order()
+    if ticker == "OXY":
+        signal = "CALL (TEST DE CONEXIÓN - COMPRA FORZADA)"
+        reason = (
+            f"⚠️ PRUEBA DE SISTEMA - COMPRA FORZADA\n"
+            f"   Ticker: {ticker}\n"
+            f"   Precio actual: ${current_price:.2f}\n"
+            f"   RSI: {rsi:.2f}\n"
+            f"   Objetivo: Verificar que api.submit_order() funciona correctamente\n"
+            f"   NOTA: Esta es una orden de prueba (1 acción)"
+        )
+        log_message(f"\n⚠️⚠️⚠️ TEST MODE ACTIVADO PARA {ticker} ⚠️⚠️⚠️")
+        log_message(f"   Esta compra es FORZADA para verificar conexión con Alpaca")
+        return signal, reason
+    # ========== FIN TEST DE CONEXIÓN ==========
+
     # --- Lógica de Disparo (Trigger) ---
     breakout = current_price > resistencia
     volumen_institucional = current_volume > (vol_sma_val * 1.5)
@@ -340,17 +360,17 @@ def run_bot():
 
                 current_price = float(bars.iloc[-1]['close'])
 
-                # EJECUCIÓN REAL: Comprar 10 acciones en Market Order
+                # EJECUCIÓN REAL: Comprar 1 acción (TEST MODE)
                 try:
                     log_message(f"\n   📈 EJECUTANDO ORDEN DE COMPRA:")
                     log_message(f"      Ticker: {symbol}")
-                    log_message(f"      Cantidad: 10 acciones")
+                    log_message(f"      Cantidad: 1 acción (MODO TEST)")
                     log_message(f"      Tipo: Market Order")
                     log_message(f"      Precio aproximado: ${current_price:.2f}")
 
                     order = api.submit_order(
                         symbol=symbol,
-                        qty=10,
+                        qty=1,  # TEST: 1 acción para verificar conexión
                         side='buy',
                         type='market',
                         time_in_force='day'
