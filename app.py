@@ -456,8 +456,13 @@ def save_config_to_github(config_data, github_token, repo_name):
 
 # ========== COMPONENTES EDUCATIVOS (v5.0) ==========
 
-def render_strategy_education(strategy_key):
-    """Muestra información educativa sobre la estrategia seleccionada"""
+def render_strategy_education(strategy_key, use_expander=True):
+    """Muestra información educativa sobre la estrategia seleccionada
+
+    Args:
+        strategy_key: Clave de la estrategia
+        use_expander: Si False, muestra el contenido directamente sin expander (útil cuando ya estamos dentro de un expander)
+    """
     education_content = {
         "elite": {
             "icon": "🏆",
@@ -575,11 +580,24 @@ def render_strategy_education(strategy_key):
     if strategy_key in education_content:
         info = education_content[strategy_key]
 
-        with st.expander(f"{info['icon']} ¿Qué es {info['title']}?", expanded=False):
-            st.markdown(f"### {info['what']}")
-            st.markdown(info['how'])
-            st.markdown("---")
-            st.markdown("### 💳 Compatibilidad de Cuenta")
+        if use_expander:
+            # Modo normal: usar expander
+            with st.expander(f"{info['icon']} ¿Qué es {info['title']}?", expanded=False):
+                st.markdown(f"### {info['what']}")
+                st.markdown(info['how'])
+                st.markdown("---")
+                st.markdown("### 💳 Compatibilidad de Cuenta")
+                st.markdown(info['account'])
+        else:
+            # Modo sin expander: mostrar directamente (cuando ya estamos dentro de un expander)
+            st.markdown(f"---")
+            st.markdown(f"#### {info['icon']} ¿Qué es {info['title']}?")
+            st.markdown(f"{info['what']}")
+
+            with st.container():
+                st.markdown(info['how'])
+
+            st.markdown("**💳 Compatibilidad de Cuenta**")
             st.markdown(info['account'])
 
 # ========== INDICADOR DE SINCRONIZACIÓN ==========
@@ -665,8 +683,8 @@ def render_bot_mission_panel():
 
     st.info(f"🤖 **Bot ejecutará:** {strategies.get(bot_strategy, {}).get('name', bot_strategy.upper())}")
 
-    # Mostrar información educativa sobre la estrategia seleccionada
-    render_strategy_education(bot_strategy)
+    # Mostrar información educativa sobre la estrategia seleccionada (sin expander porque ya estamos dentro de uno)
+    render_strategy_education(bot_strategy, use_expander=False)
 
     # Watchlist del bot
     st.markdown("### 📝 Watchlist del Bot")
