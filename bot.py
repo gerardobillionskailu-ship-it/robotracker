@@ -577,7 +577,7 @@ def run_bot():
                     triggered_strategy = 'centinela → orb'
                     log_message(f"      ✅ TRIGGER ACTIVADO por ORB")
                 else:
-                    triggered_strategy = 'centinela
+                    triggered_strategy = 'centinela'
 
             # ========== MODOS INDIVIDUALES ==========
             elif active_strategy == 'wheel':
