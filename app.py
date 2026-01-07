@@ -993,77 +993,144 @@ def render_contract_opportunities(df_signals, view_strategy):
 
 # ========== MAIN ==========
 
+def render_trade_history():
+    """Muestra el historial oficial de operaciones del bot"""
+    st.markdown("## 📜 Historial Oficial de Operaciones")
+    st.markdown("*Todas las operaciones ejecutadas por el bot en Paper Trading*")
+
+    try:
+        if os.path.exists('trade_history.json'):
+            with open('trade_history.json', 'r') as f:
+                history = json.load(f)
+
+            if history:
+                # Convertir a DataFrame
+                df_history = pd.DataFrame(history)
+
+                # Ordenar por fecha descendente (más recientes primero)
+                df_history = df_history.iloc[::-1]
+
+                # Formatear para visualización
+                st.dataframe(
+                    df_history,
+                    use_container_width=True,
+                    height=500,
+                    column_config={
+                        "date": st.column_config.TextColumn("Fecha (ET)", width="medium"),
+                        "ticker": st.column_config.TextColumn("Ticker", width="small"),
+                        "action": st.column_config.TextColumn("Acción", width="small"),
+                        "strategy": st.column_config.TextColumn("Estrategia", width="medium"),
+                        "quantity": st.column_config.NumberColumn("Cantidad", width="small"),
+                        "price": st.column_config.NumberColumn("Precio", format="$%.2f", width="small"),
+                        "order_id": st.column_config.TextColumn("Order ID", width="large"),
+                        "signal": st.column_config.TextColumn("Señal", width="medium")
+                    }
+                )
+
+                # Métricas resumen
+                st.markdown("### 📊 Resumen de Operaciones")
+                col1, col2, col3, col4 = st.columns(4)
+
+                with col1:
+                    st.metric("Total Operaciones", len(history))
+                with col2:
+                    total_acciones = df_history['quantity'].sum()
+                    st.metric("Total Acciones", f"{int(total_acciones)}")
+                with col3:
+                    estrategias = df_history['strategy'].nunique()
+                    st.metric("Estrategias Usadas", estrategias)
+                with col4:
+                    tickers = df_history['ticker'].nunique()
+                    st.metric("Tickers Operados", tickers)
+
+            else:
+                st.info("📭 No hay operaciones registradas aún. El bot comenzará a registrar cuando ejecute órdenes.")
+
+        else:
+            st.info("📭 El archivo de historial aún no existe. Se creará cuando el bot ejecute la primera operación.")
+
+    except Exception as e:
+        st.error(f"❌ Error leyendo historial: {e}")
+
 def main():
     st.markdown("# 📊 TradeOlympo v5.0")
     st.markdown("**Trading Terminal Profesional** | 6 Estrategias: Swing, Opciones & Day Trading")
     st.markdown("---")
 
-    # PANEL 1: Panel de Control del Bot (Misión)
-    with st.expander("🤖 PANEL DE CONTROL DEL BOT (MISIÓN)", expanded=True):
-        bot_strategy, bot_watchlist = render_bot_mission_panel()
+    # Tabs principales
+    tab1, tab2 = st.tabs(["🎯 Trading Terminal", "📜 Historial Oficial"])
 
-    st.markdown("---")
+    with tab1:
+        # PANEL 1: Panel de Control del Bot (Misión)
+        with st.expander("🤖 PANEL DE CONTROL DEL BOT (MISIÓN)", expanded=True):
+            bot_strategy, bot_watchlist = render_bot_mission_panel()
 
-    # PANEL 2: Radar de Monitoreo Independiente
-    view_strategy, monitor_watchlist = render_independent_monitoring_radar()
+        st.markdown("---")
 
-    # Indicador de Sincronización
-    if bot_strategy and view_strategy:
-        render_sync_indicator(bot_strategy, view_strategy)
+        # PANEL 2: Radar de Monitoreo Independiente
+        view_strategy, monitor_watchlist = render_independent_monitoring_radar()
 
-    # Obtener credenciales de Alpaca
+        # Indicador de Sincronización
+        if bot_strategy and view_strategy:
+            render_sync_indicator(bot_strategy, view_strategy)
+
+        # Obtener credenciales de Alpaca
     api_key = st.secrets.get("ALPACA_API_KEY", os.environ.get('ALPACA_API_KEY'))
     secret_key = st.secrets.get("ALPACA_SECRET_KEY", os.environ.get('ALPACA_SECRET_KEY'))
     endpoint = st.secrets.get("ALPACA_ENDPOINT", os.environ.get('ALPACA_ENDPOINT', 'https://paper-api.alpaca.markets'))
 
-    if not api_key or not secret_key:
-        st.error("""
-        ❌ **Credenciales de Alpaca no configuradas**
+        if not api_key or not secret_key:
+            st.error("""
+            ❌ **Credenciales de Alpaca no configuradas**
 
-        Para ver datos en tiempo real, configura en Streamlit Secrets:
-        ```toml
-        ALPACA_API_KEY = "tu_key"
-        ALPACA_SECRET_KEY = "tu_secret"
-        ALPACA_ENDPOINT = "https://paper-api.alpaca.markets"
-        ```
-        """)
-        return
+            Para ver datos en tiempo real, configura en Streamlit Secrets:
+            ```toml
+            ALPACA_API_KEY = "tu_key"
+            ALPACA_SECRET_KEY = "tu_secret"
+            ALPACA_ENDPOINT = "https://paper-api.alpaca.markets"
+            ```
+            """)
+            return
 
-    if not monitor_watchlist:
-        st.warning("⚠️ Configura la watchlist de monitoreo para ver análisis")
-        return
+        if not monitor_watchlist:
+            st.warning("⚠️ Configura la watchlist de monitoreo para ver análisis")
+            return
 
-    # Botón de refresh
-    col1, col2, col3 = st.columns([2, 1, 1])
-    with col2:
-        if st.button("🔄 Actualizar Datos", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
+        # Botón de refresh
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col2:
+            if st.button("🔄 Actualizar Datos", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
 
-    # Obtener datos de mercado USANDO MONITOR_WATCHLIST (no bot_watchlist)
-    with st.spinner('Obteniendo datos de mercado y consultando a todos los jueces...'):
-        df = fetch_market_data(monitor_watchlist, api_key, secret_key, endpoint)
+        # Obtener datos de mercado USANDO MONITOR_WATCHLIST (no bot_watchlist)
+        with st.spinner('Obteniendo datos de mercado y consultando a todos los jueces...'):
+            df = fetch_market_data(monitor_watchlist, api_key, secret_key, endpoint)
 
-    if df.empty:
-        st.error("No se pudieron obtener datos de mercado")
-        return
+        if df.empty:
+            st.error("No se pudieron obtener datos de mercado")
+            return
 
-    # Generar señales de TODOS los jueces
-    df_signals = generate_all_judges_signals(df)
+        # Generar señales de TODOS los jueces
+        df_signals = generate_all_judges_signals(df)
 
-    # Mostrar tabla con todos los jueces
-    render_trading_table_with_judges(df_signals, view_strategy)
+        # Mostrar tabla con todos los jueces
+        render_trading_table_with_judges(df_signals, view_strategy)
 
-    # Mostrar tarjetas de contratos con oportunidades
-    render_contract_opportunities(df_signals, view_strategy)
+        # Mostrar tarjetas de contratos con oportunidades
+        render_contract_opportunities(df_signals, view_strategy)
 
-    st.markdown("---")
-    st.markdown("""
-    <div style='text-align: center; color: #6B7280; font-size: 0.85rem;'>
-        TradeOlympo v5.0 | 6 Estrategias: Swing + Opciones + Day Trading<br>
-        Bot Mission: Piloto Automático | Monitoring Radar: Vista Independiente
-    </div>
-    """, unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("""
+        <div style='text-align: center; color: #6B7280; font-size: 0.85rem;'>
+            TradeOlympo v5.0 | 6 Estrategias: Swing + Opciones + Day Trading<br>
+            Bot Mission: Piloto Automático | Monitoring Radar: Vista Independiente
+        </div>
+        """, unsafe_allow_html=True)
+
+    with tab2:
+        # PANEL: Historial Oficial de Operaciones
+        render_trade_history()
 
 if __name__ == "__main__":
     main()

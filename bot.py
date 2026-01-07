@@ -44,6 +44,33 @@ def log_message(message):
     except Exception as e:
         print(f"⚠️ No se pudo escribir log: {e}")
 
+def save_to_trade_history(trade_record):
+    """
+    Guarda un registro de operación en trade_history.json
+
+    Args:
+        trade_record: Dict con {date, ticker, action, strategy, quantity, price, order_id, signal}
+    """
+    try:
+        # Leer historial existente o crear nuevo
+        if os.path.exists('trade_history.json'):
+            with open('trade_history.json', 'r') as f:
+                history = json.load(f)
+        else:
+            history = []
+
+        # Agregar nuevo registro
+        history.append(trade_record)
+
+        # Guardar actualizado
+        with open('trade_history.json', 'w') as f:
+            json.dump(history, f, indent=2)
+
+        log_message(f"   📜 Operación guardada en trade_history.json")
+
+    except Exception as e:
+        log_message(f"   ⚠️ Error guardando en trade_history.json: {e}")
+
 # ========== FUNCIONES DE CONFIGURACIÓN ==========
 
 def load_config():
@@ -529,17 +556,17 @@ def run_bot():
 
                 current_price = float(bars.iloc[-1]['close'])
 
-                # EJECUCIÓN REAL: Comprar 1 acción (TEST MODE)
+                # EJECUCIÓN REAL: Comprar 10 acciones (PRODUCCIÓN)
                 try:
                     log_message(f"\n   📈 EJECUTANDO ORDEN DE COMPRA:")
                     log_message(f"      Ticker: {symbol}")
-                    log_message(f"      Cantidad: 1 acción (MODO TEST)")
+                    log_message(f"      Cantidad: 10 acciones")
                     log_message(f"      Tipo: Market Order")
                     log_message(f"      Precio aproximado: ${current_price:.2f}")
 
                     order = api.submit_order(
                         symbol=symbol,
-                        qty=1,  # TEST: 1 acción para verificar conexión
+                        qty=10,  # PRODUCCIÓN: 10 acciones
                         side='buy',
                         type='market',
                         time_in_force='day'
@@ -549,6 +576,9 @@ def run_bot():
                     log_message(f"      Order ID: {order.id}")
                     log_message(f"      Status: {order.status}")
 
+                    # Timestamp en New York Time
+                    ny_time = datetime.now(pytz.timezone('America/New_York'))
+
                     resultados.append({
                         "ticker": symbol,
                         "signal": signal,
@@ -557,18 +587,32 @@ def run_bot():
                         "order_id": order.id,
                         "order_status": order.status,
                         "quantity": 10,
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": ny_time.isoformat(),
+                        "strategy": active_strategy
+                    })
+
+                    # Guardar en bitácora persistente
+                    save_to_trade_history({
+                        "date": ny_time.strftime('%Y-%m-%d %H:%M:%S ET'),
+                        "ticker": symbol,
+                        "action": "BUY",
+                        "strategy": active_strategy,
+                        "quantity": 10,
+                        "price": current_price,
+                        "order_id": order.id,
+                        "signal": signal
                     })
 
                 except Exception as order_error:
                     log_message(f"   ❌ ERROR AL EJECUTAR ORDEN: {order_error}")
+                    ny_time = datetime.now(pytz.timezone('America/New_York'))
                     resultados.append({
                         "ticker": symbol,
                         "signal": signal,
                         "reason": reason,
                         "price": current_price,
                         "error": str(order_error),
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": ny_time.isoformat()
                     })
 
             elif signal:

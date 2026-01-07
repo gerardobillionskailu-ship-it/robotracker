@@ -2,9 +2,10 @@ name: TradeOlympo Auto-Bot
 
 on:
   schedule:
-    # Ejecución programada: Cada hora de 14:00 a 21:00 UTC (9am-4pm EST), Lunes a Viernes
-    # Horario del mercado estadounidense: 9:30am-4pm EST (14:30-21:00 UTC)
-    - cron: '0 14-21 * * 1-5'
+    # Ejecución programada: Cada 15 minutos durante horas de mercado
+    # UTC 13:00-21:00 cubre NY market hours (9:30am-4pm ET) en verano e invierno
+    # Lunes a Viernes
+    - cron: '*/15 13-21 * * 1-5'
   workflow_dispatch: # Botón para ejecución manual inmediata desde GitHub Actions UI
 
 jobs:
@@ -31,6 +32,15 @@ jobs:
         ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
         ALPACA_ENDPOINT: ${{ secrets.ALPACA_ENDPOINT }}
       run: python bot.py
+
+    - name: Commit trade history (if updated)
+      if: always()
+      run: |
+        git config --global user.name "TradeOlympo Bot"
+        git config --global user.email "bot@tradeolympo.com"
+        git add trade_history.json || true
+        git commit -m "📊 Update trade history - $(date -u '+%Y-%m-%d %H:%M:%S UTC')" || true
+        git push || true
 
     - name: Show execution summary
       if: always()
