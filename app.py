@@ -1,6 +1,10 @@
 """
-TradeOlympo - Plataforma Profesional de Análisis Financiero v4.0
+TradeOlympo - Plataforma Profesional de Análisis Financiero v5.0
 Arquitectura de Doble Propósito: Misión del Bot vs Radar de Monitoreo
+
+NUEVAS ESTRATEGIAS v5.0:
+- The Wheel (Opciones): Venta de primas con Cash-Secured Puts y Covered Calls
+- ORB (Day Trading): Opening Range Breakout con acciones
 """
 
 import streamlit as st
@@ -352,20 +356,40 @@ def load_user_config():
                 "last_updated": datetime.now().isoformat(),
                 "strategies": {
                     "elite": {
-                        "name": "Estrategia Élite (Reversión)",
-                        "default_tickers": ["NVDA", "TSLA", "AMD", "AAPL", "MSFT", "META", "COIN"]
+                        "name": "Swing - Élite (Tech)",
+                        "type": "swing",
+                        "default_tickers": ["NVDA", "TSLA", "AMD", "AAPL", "MSFT", "META", "COIN"],
+                        "description": "Reversión a la media en tech stocks con RSI < 30 + tendencia alcista"
                     },
                     "rompeolas": {
-                        "name": "Estrategia Rompeolas (Breakout)",
-                        "default_tickers": ["XLE", "OXY", "APA", "CVX", "COP", "SLB", "HAL", "VLO"]
+                        "name": "Swing - Rompeolas (Energía)",
+                        "type": "swing",
+                        "default_tickers": ["XLE", "OXY", "APA", "CVX", "COP", "SLB", "HAL", "VLO"],
+                        "description": "Breakout de energía con RSI > 50 + volumen alto"
+                    },
+                    "wheel": {
+                        "name": "Income - The Wheel (Opciones)",
+                        "type": "options",
+                        "default_tickers": ["AAPL", "MSFT", "SPY", "QQQ", "NVDA", "AMD"],
+                        "description": "Venta de primas con Cash-Secured Puts y Covered Calls. Generación de ingresos con theta decay."
+                    },
+                    "orb": {
+                        "name": "Day Trading - ORB (Acciones)",
+                        "type": "daytrading",
+                        "default_tickers": ["SPY", "QQQ", "TSLA", "NVDA", "AMD"],
+                        "description": "Opening Range Breakout. Operativa intradía aprovechando volatilidad de apertura."
                     },
                     "larry": {
                         "name": "Larry Williams (Contrarian)",
-                        "default_tickers": ["SPY", "QQQ", "IWM", "XLE", "XLF"]
+                        "type": "swing",
+                        "default_tickers": ["SPY", "QQQ", "IWM", "XLE", "XLF"],
+                        "description": "Contrarian con Williams %R y SMAs"
                     },
                     "wyckoff": {
                         "name": "Wyckoff (Volume)",
-                        "default_tickers": ["SPY", "NVDA", "TSLA", "XLE"]
+                        "type": "swing",
+                        "default_tickers": ["SPY", "NVDA", "TSLA", "XLE"],
+                        "description": "Análisis de volumen y posición de cierre"
                     }
                 },
                 "strategic_sectors": {
@@ -430,6 +454,134 @@ def save_config_to_github(config_data, github_token, repo_name):
     except Exception as e:
         return False, f"❌ Error guardando en GitHub: {str(e)}"
 
+# ========== COMPONENTES EDUCATIVOS (v5.0) ==========
+
+def render_strategy_education(strategy_key):
+    """Muestra información educativa sobre la estrategia seleccionada"""
+    education_content = {
+        "elite": {
+            "icon": "🏆",
+            "title": "Swing - Estrategia Élite (Tech)",
+            "what": "Estrategia de **reversión a la media** para acciones tecnológicas de alta capitalización.",
+            "how": """
+**Cómo funciona:**
+1. Busca tech stocks (NVDA, TSLA, AMD, etc.) con **RSI < 30** (sobreventa)
+2. Confirma que la tendencia general es alcista (precio > SMA 200)
+3. Entra en la reversión cuando el precio rebota desde niveles de sobreventa
+
+**Tipo de operación:** Compra de acciones (Shares) o CALL options
+            """,
+            "account": "✅ **Cash Account:** Sí (compra directa de acciones)\n✅ **Margin Account:** Sí (permite más flexibilidad)"
+        },
+        "rompeolas": {
+            "icon": "🌊",
+            "title": "Swing - Estrategia Rompeolas (Energía)",
+            "what": "Estrategia de **breakout con volumen** enfocada en sector energético.",
+            "how": """
+**Cómo funciona:**
+1. Monitorea acciones de energía (XLE, OXY, CVX, etc.)
+2. Detecta cuando el precio rompe la resistencia de 20 días
+3. Confirma con **RSI > 50** (fuerza) + **Volumen > 150%** (institucional)
+4. Entra en el momentum cuando hay confirmación
+
+**Tipo de operación:** Compra de acciones (Shares) o CALL options
+            """,
+            "account": "✅ **Cash Account:** Sí (compra directa de acciones)\n✅ **Margin Account:** Sí (permite más flexibilidad)"
+        },
+        "wheel": {
+            "icon": "🔄",
+            "title": "Income - The Wheel (Opciones)",
+            "what": "Estrategia de **generación de ingresos pasivos** vendiendo primas de opciones (theta decay).",
+            "how": """
+**Cómo funciona (2 fases):**
+
+**FASE 1 - Cash-Secured Put (CSP):**
+- Tienes $10,000 en cash
+- Vendes 1 PUT de AAPL strike $170 (Delta ~0.30)
+- Cobras $300 de prima
+- Si AAPL cae < $170 → Te asignan 100 acciones a $170
+- Si AAPL se mantiene > $170 → Te quedas con los $300
+
+**FASE 2 - Covered Call (CC):**
+- Ahora tienes 100 acciones de AAPL (cost basis $170)
+- Vendes 1 CALL strike $175 (por encima de tu coste)
+- Cobras $200 de prima
+- Si AAPL sube > $175 → Vendes tus acciones con ganancia
+- Si AAPL se mantiene < $175 → Te quedas las acciones + $200
+
+**Ciclo completo:** CSP → Asignación → CC → Venta → CSP (La Rueda)
+
+**Tipo de operación:** Venta de opciones (requiere colateral)
+            """,
+            "account": """
+❌ **Cash Account:** NO (no permite venta de opciones sin shares)
+✅ **Margin Account:** SÍ (necesitas Tier 2 Options approval)
+
+**Requisitos:**
+- Margen Nivel 2 (Cash-Secured Puts permitidos)
+- Colateral: $10,000+ por contrato
+- Probabilidad de éxito: 70-80% (Delta 0.30)
+            """
+        },
+        "orb": {
+            "icon": "⚡",
+            "title": "Day Trading - ORB (Opening Range Breakout)",
+            "what": "Estrategia de **day trading** que aprovecha la volatilidad de la apertura del mercado.",
+            "how": """
+**Cómo funciona:**
+
+**FASE 1 - Observación (9:30 AM - 10:00 AM ET):**
+- No opera, solo observa
+- Registra el **máximo** y **mínimo** de los primeros 30 minutos
+- Este es el "rango de apertura"
+
+**FASE 2 - Ejecución (10:00 AM - 3:55 PM ET):**
+- Si precio > Máximo del rango + Volumen alto → **COMPRA** (breakout alcista)
+- Si precio < Mínimo del rango + Volumen alto → **VENTA** (breakout bajista)
+
+**FASE 3 - Cierre (3:55 PM ET):**
+- Cierra **TODAS** las posiciones 5 minutos antes del cierre
+- **NO deja posiciones abiertas overnight**
+
+**Tipo de operación:** Compra/venta de acciones (Shares) con gestión intradía
+            """,
+            "account": """
+❌ **Cash Account:** NO (violación de PDT rule con 4+ trades/semana)
+✅ **Margin Account con $25,000+:** SÍ (Pattern Day Trader)
+
+**Requisitos:**
+- Mínimo $25,000 en cuenta (PDT rule)
+- Margin account activa
+- Acceso a datos en tiempo real
+- Comisiones bajas (muchas operaciones)
+            """
+        },
+        "larry": {
+            "icon": "📈",
+            "title": "Larry Williams (Contrarian)",
+            "what": "Estrategia contrarian con Williams %R",
+            "how": "Busca sobrecompra/sobreventa con Williams %R y confirma con SMAs.",
+            "account": "✅ Cash/Margin compatible"
+        },
+        "wyckoff": {
+            "icon": "📊",
+            "title": "Wyckoff (Volume Analysis)",
+            "what": "Análisis de volumen y acumulación/distribución",
+            "how": "Detecta movimientos institucionales mediante análisis de volumen y posición de cierre.",
+            "account": "✅ Cash/Margin compatible"
+        }
+    }
+
+    if strategy_key in education_content:
+        info = education_content[strategy_key]
+
+        with st.expander(f"{info['icon']} ¿Qué es {info['title']}?", expanded=False):
+            st.markdown(f"### {info['what']}")
+            st.markdown(info['how'])
+            st.markdown("---")
+            st.markdown("### 💳 Compatibilidad de Cuenta")
+            st.markdown(info['account'])
+
 # ========== INDICADOR DE SINCRONIZACIÓN ==========
 
 def render_sync_indicator(bot_strategy, view_strategy):
@@ -465,23 +617,45 @@ def render_bot_mission_panel():
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("🏆 Élite (Reversión)", use_container_width=True, key="bot_elite"):
+        if st.button("🏆 Swing - Élite (Tech)", use_container_width=True, key="bot_elite"):
             st.session_state['bot_strategy'] = 'elite'
         st.markdown("""
         **Reversión a la Media**
         - Tech stocks (NVDA, TSLA, AMD)
         - RSI < 30 (sobreventa)
-        - Tendencia alcista (SMA 200)
+        - Compra de acciones/CALL options
         """)
 
     with col2:
-        if st.button("🌊 Rompeolas (Breakout)", use_container_width=True, key="bot_rompeolas"):
+        if st.button("🌊 Swing - Rompeolas (Energía)", use_container_width=True, key="bot_rompeolas"):
             st.session_state['bot_strategy'] = 'rompeolas'
         st.markdown("""
-        **Breakout de Energía**
+        **Breakout con Volumen**
         - Sector energía (XLE, OXY, CVX)
-        - RSI > 50 (fuerza)
-        - Volumen > 150% promedio
+        - RSI > 50 + Volumen > 150%
+        - Compra de acciones/CALL options
+        """)
+
+    col3, col4 = st.columns(2)
+
+    with col3:
+        if st.button("🔄 Income - The Wheel (Opciones)", use_container_width=True, key="bot_wheel"):
+            st.session_state['bot_strategy'] = 'wheel'
+        st.markdown("""
+        **Generación de Ingresos**
+        - Venta de Cash-Secured Puts
+        - Covered Calls si asignado
+        - ⚠️ Requiere Margin Account
+        """)
+
+    with col4:
+        if st.button("⚡ Day Trading - ORB", use_container_width=True, key="bot_orb"):
+            st.session_state['bot_strategy'] = 'orb'
+        st.markdown("""
+        **Opening Range Breakout**
+        - Breakout de apertura (9:30-10:00 AM)
+        - Cierra posiciones antes del close
+        - ⚠️ Requiere $25K+ (PDT)
         """)
 
     if 'bot_strategy' not in st.session_state:
@@ -489,7 +663,10 @@ def render_bot_mission_panel():
 
     bot_strategy = st.session_state['bot_strategy']
 
-    st.info(f"🤖 **Bot ejecutará:** {bot_strategy.upper()}")
+    st.info(f"🤖 **Bot ejecutará:** {strategies.get(bot_strategy, {}).get('name', bot_strategy.upper())}")
+
+    # Mostrar información educativa sobre la estrategia seleccionada
+    render_strategy_education(bot_strategy)
 
     # Watchlist del bot
     st.markdown("### 📝 Watchlist del Bot")
@@ -562,22 +739,26 @@ def render_independent_monitoring_radar():
     st.markdown("*Selecciona qué estrategia quieres visualizar (independiente de la misión del bot)*")
 
     # Selector de estrategia VISUAL (solo afecta tabla)
-    col1, col2, col3, col4 = st.columns(4)
+    st.markdown("**📊 Selecciona qué estrategia quieres visualizar en la tabla:**")
+
+    col1, col2, col3 = st.columns(3)
 
     with col1:
-        if st.button("🏆 Ver Élite", use_container_width=True, key="view_elite"):
+        if st.button("🏆 Swing - Élite", use_container_width=True, key="view_elite"):
             st.session_state['view_strategy'] = 'elite'
-
-    with col2:
-        if st.button("🌊 Ver Rompeolas", use_container_width=True, key="view_rompeolas"):
+        if st.button("🌊 Swing - Rompeolas", use_container_width=True, key="view_rompeolas"):
             st.session_state['view_strategy'] = 'rompeolas'
 
-    with col3:
-        if st.button("📈 Ver Larry Williams", use_container_width=True, key="view_larry"):
-            st.session_state['view_strategy'] = 'larry'
+    with col2:
+        if st.button("🔄 Income - The Wheel", use_container_width=True, key="view_wheel"):
+            st.session_state['view_strategy'] = 'wheel'
+        if st.button("⚡ Day Trading - ORB", use_container_width=True, key="view_orb"):
+            st.session_state['view_strategy'] = 'orb'
 
-    with col4:
-        if st.button("📊 Ver Wyckoff", use_container_width=True, key="view_wyckoff"):
+    with col3:
+        if st.button("📈 Larry Williams", use_container_width=True, key="view_larry"):
+            st.session_state['view_strategy'] = 'larry'
+        if st.button("📊 Wyckoff", use_container_width=True, key="view_wyckoff"):
             st.session_state['view_strategy'] = 'wyckoff'
 
     if 'view_strategy' not in st.session_state:
@@ -585,7 +766,14 @@ def render_independent_monitoring_radar():
 
     view_strategy = st.session_state['view_strategy']
 
-    st.info(f"👁️ **Visualizando:** {view_strategy.upper()} (esto NO afecta al bot)")
+    config = load_user_config()
+    strategies = config.get('strategies', {})
+    strategy_name = strategies.get(view_strategy, {}).get('name', view_strategy.upper())
+
+    st.info(f"👁️ **Visualizando:** {strategy_name} (esto NO afecta al bot)")
+
+    # Mostrar información educativa sobre la estrategia visualizada
+    render_strategy_education(view_strategy)
 
     st.markdown("---")
 
@@ -788,8 +976,8 @@ def render_contract_opportunities(df_signals, view_strategy):
 # ========== MAIN ==========
 
 def main():
-    st.markdown("# 📊 TradeOlympo v4.0")
-    st.markdown("**Trading Terminal Profesional** | Arquitectura de Doble Propósito")
+    st.markdown("# 📊 TradeOlympo v5.0")
+    st.markdown("**Trading Terminal Profesional** | 6 Estrategias: Swing, Opciones & Day Trading")
     st.markdown("---")
 
     # PANEL 1: Panel de Control del Bot (Misión)
@@ -854,7 +1042,7 @@ def main():
     st.markdown("---")
     st.markdown("""
     <div style='text-align: center; color: #6B7280; font-size: 0.85rem;'>
-        TradeOlympo v4.0 | Arquitectura de Doble Propósito<br>
+        TradeOlympo v5.0 | 6 Estrategias: Swing + Opciones + Day Trading<br>
         Bot Mission: Piloto Automático | Monitoring Radar: Vista Independiente
     </div>
     """, unsafe_allow_html=True)
