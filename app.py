@@ -371,7 +371,7 @@ def load_user_config():
                 "strategic_sectors": {
                     "venezuela_recovery": {
                         "name": "🛢️ Venezuela Recovery & Oil Services",
-                        "tickers": ["CVX", "SLB", "HAL", "BKR", "VLO", "WFRD", "XOM", "COP", "MPC", "OXY"],
+                        "tickers": ["CVX", "SLB", "HAL", "VLO", "WFRD", "XOM", "COP", "MPC", "OXY", "PBR"],
                         "description": "Empresas con exposición a la reactivación petrolera venezolana"
                     },
                     "big_tech": {
@@ -602,25 +602,27 @@ def render_independent_monitoring_radar():
         **{key: sector['name'] for key, sector in strategic_sectors.items()}
     }
 
-    # Selectbox para seleccionar sector
+    # Callback para actualizar watchlist automáticamente cuando cambia el selector
+    def on_sector_change():
+        selected = st.session_state.get('sector_selector', '')
+        if selected and selected != "":
+            sector_tickers = strategic_sectors[selected]['tickers']
+            st.session_state['monitor_watchlist_text'] = ", ".join(sector_tickers)
+            st.session_state['last_selected_sector'] = selected
+
+    # Selectbox para seleccionar sector con callback automático
     selected_sector_key = st.selectbox(
         "📋 Cargar Sector Estratégico",
         options=list(sector_options.keys()),
         format_func=lambda x: sector_options[x],
         key="sector_selector",
-        help="Selecciona un sector para cargar sus tickers automáticamente. Luego puedes editarlos manualmente."
+        help="Selecciona un sector para cargar sus tickers automáticamente. Luego puedes editarlos manualmente.",
+        on_change=on_sector_change
     )
 
-    # Sincronizar selectbox → text_area
+    # Mostrar descripción del sector seleccionado
     if selected_sector_key and selected_sector_key != "":
-        # Obtener tickers del sector seleccionado
-        sector_tickers = strategic_sectors[selected_sector_key]['tickers']
-        # Actualizar session_state solo si cambió el sector
-        if st.session_state.get('last_selected_sector') != selected_sector_key:
-            st.session_state['monitor_watchlist_text'] = ", ".join(sector_tickers)
-            st.session_state['last_selected_sector'] = selected_sector_key
-            # Mostrar descripción del sector
-            st.info(f"ℹ️ {strategic_sectors[selected_sector_key]['description']}")
+        st.info(f"ℹ️ **{strategic_sectors[selected_sector_key]['name']}**: {strategic_sectors[selected_sector_key]['description']}")
 
     # Inicializar text_area si no existe
     if 'monitor_watchlist_text' not in st.session_state:
@@ -729,6 +731,60 @@ def render_trading_table_with_judges(df_signals, view_strategy):
         neutrals = display_df['Señal Principal'].str.contains('NEUTRAL').sum()
         st.metric("⚪ NEUTRAL", neutrals)
 
+def render_contract_opportunities(df_signals, view_strategy):
+    """Muestra tarjetas de contratos cuando hay señales de compra CALL"""
+    st.markdown("---")
+    st.markdown("### 🎯 Oportunidades Identificadas")
+
+    # Filtrar señales CALL según estrategia visualizada
+    opportunities = []
+
+    for idx, row in df_signals.iterrows():
+        # Determinar señal según estrategia visualizada
+        if view_strategy == 'larry':
+            signal = row['larry_signal']
+            reason = row['larry_reason']
+        elif view_strategy == 'wyckoff':
+            signal = row['wyckoff_signal']
+            reason = row['wyckoff_reason']
+        elif view_strategy == 'elite':
+            signal = row['elite_signal']
+            reason = row['elite_reason']
+        else:  # rompeolas
+            signal = row['rompeolas_signal']
+            reason = row['rompeolas_reason']
+
+        if signal == "CALL":
+            # Calcular parámetros del contrato
+            current_price = row['price']
+            strike_price = current_price * 0.97  # 3% ITM (In The Money)
+            expiration_date = datetime.now() + timedelta(days=45)
+            stop_loss = current_price * 0.95  # Stop loss al 5% debajo del precio actual
+
+            opportunities.append({
+                'ticker': row['symbol'],
+                'price': current_price,
+                'strike': strike_price,
+                'expiration': expiration_date,
+                'stop_loss': stop_loss,
+                'reason': reason
+            })
+
+    if opportunities:
+        st.markdown(f"**Se detectaron {len(opportunities)} oportunidad(es) de compra según estrategia {view_strategy.upper()}:**")
+
+        for opp in opportunities:
+            st.success(f"""
+**🎯 {opp['ticker']}** - Señal de CALL
+📊 **Precio Actual:** ${opp['price']:.2f}
+💰 **Contrato Sugerido:** CALL ${opp['strike']:.2f} (3% ITM)
+📅 **Vencimiento:** {opp['expiration'].strftime('%Y-%m-%d')} (45 días)
+🛡️ **Stop Loss Sugerido:** ${opp['stop_loss']:.2f} (-5%)
+📝 **Fundamento:** {opp['reason']}
+            """)
+    else:
+        st.info(f"ℹ️ No hay señales de CALL activas en la estrategia {view_strategy.upper()} en este momento.")
+
 # ========== MAIN ==========
 
 def main():
@@ -791,6 +847,9 @@ def main():
 
     # Mostrar tabla con todos los jueces
     render_trading_table_with_judges(df_signals, view_strategy)
+
+    # Mostrar tarjetas de contratos con oportunidades
+    render_contract_opportunities(df_signals, view_strategy)
 
     st.markdown("---")
     st.markdown("""
