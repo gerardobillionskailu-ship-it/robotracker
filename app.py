@@ -367,6 +367,28 @@ def load_user_config():
                         "name": "Wyckoff (Volume)",
                         "default_tickers": ["SPY", "NVDA", "TSLA", "XLE"]
                     }
+                },
+                "strategic_sectors": {
+                    "venezuela_recovery": {
+                        "name": "🛢️ Venezuela Recovery & Oil Services",
+                        "tickers": ["CVX", "SLB", "HAL", "BKR", "VLO", "WFRD", "XOM", "COP", "MPC", "OXY"],
+                        "description": "Empresas con exposición a la reactivación petrolera venezolana"
+                    },
+                    "big_tech": {
+                        "name": "💻 Big Tech & AI",
+                        "tickers": ["NVDA", "MSFT", "AAPL", "AMD", "GOOGL", "META", "TSM", "AVGO"],
+                        "description": "Gigantes tecnológicos y líderes en IA"
+                    },
+                    "crypto_proxies": {
+                        "name": "₿ Crypto Proxies",
+                        "tickers": ["COIN", "MSTR", "MARA", "RIOT", "CLSK", "IBIT"],
+                        "description": "Proxies de criptomonedas en mercados tradicionales"
+                    },
+                    "defense_aero": {
+                        "name": "🛡️ Defensa & Aero",
+                        "tickers": ["LMT", "RTX", "NOC", "GD", "BA", "PLTR"],
+                        "description": "Sector defensa y aeroespacial"
+                    }
                 }
             }
     except Exception as e:
@@ -565,7 +587,69 @@ def render_independent_monitoring_radar():
 
     st.info(f"👁️ **Visualizando:** {view_strategy.upper()} (esto NO afecta al bot)")
 
-    return view_strategy
+    st.markdown("---")
+
+    # ========== SELECTOR DE WATCHLIST PARA MONITOREO ==========
+    st.markdown("### 🎯 Seleccionar Watchlist para Análisis Visual")
+    st.markdown("*Elige un sector pre-cargado o edita manualmente los tickers*")
+
+    config = load_user_config()
+    strategic_sectors = config.get('strategic_sectors', {})
+
+    # Crear opciones para el selectbox
+    sector_options = {
+        "": "-- Selecciona un Sector --",
+        **{key: sector['name'] for key, sector in strategic_sectors.items()}
+    }
+
+    # Selectbox para seleccionar sector
+    selected_sector_key = st.selectbox(
+        "📋 Cargar Sector Estratégico",
+        options=list(sector_options.keys()),
+        format_func=lambda x: sector_options[x],
+        key="sector_selector",
+        help="Selecciona un sector para cargar sus tickers automáticamente. Luego puedes editarlos manualmente."
+    )
+
+    # Sincronizar selectbox → text_area
+    if selected_sector_key and selected_sector_key != "":
+        # Obtener tickers del sector seleccionado
+        sector_tickers = strategic_sectors[selected_sector_key]['tickers']
+        # Actualizar session_state solo si cambió el sector
+        if st.session_state.get('last_selected_sector') != selected_sector_key:
+            st.session_state['monitor_watchlist_text'] = ", ".join(sector_tickers)
+            st.session_state['last_selected_sector'] = selected_sector_key
+            # Mostrar descripción del sector
+            st.info(f"ℹ️ {strategic_sectors[selected_sector_key]['description']}")
+
+    # Inicializar text_area si no existe
+    if 'monitor_watchlist_text' not in st.session_state:
+        # Default: Venezuela Recovery
+        default_sector = strategic_sectors.get('venezuela_recovery', {})
+        st.session_state['monitor_watchlist_text'] = ", ".join(default_sector.get('tickers', ["CVX", "SLB", "HAL"]))
+
+    # Text area EDITABLE
+    watchlist_text = st.text_area(
+        "🖊️ Watchlist para Monitoreo (editable)",
+        value=st.session_state['monitor_watchlist_text'],
+        height=100,
+        help="Edita, agrega o elimina tickers. El análisis se hará sobre estos símbolos.",
+        key="monitor_watchlist_input"
+    )
+
+    # Actualizar session_state con el texto actual
+    st.session_state['monitor_watchlist_text'] = watchlist_text
+
+    # Parsear watchlist
+    monitor_watchlist = [ticker.strip().upper() for ticker in watchlist_text.split(',') if ticker.strip()]
+
+    if not monitor_watchlist:
+        st.warning("⚠️ La watchlist de monitoreo está vacía. Agrega al menos un ticker.")
+        return view_strategy, []
+
+    st.success(f"✅ Analizando {len(monitor_watchlist)} símbolos: {', '.join(monitor_watchlist)}")
+
+    return view_strategy, monitor_watchlist
 
 def render_trading_table_with_judges(df_signals, view_strategy):
     """Tabla de Trading con Opiniones de TODOS los Jueces"""
@@ -659,7 +743,7 @@ def main():
     st.markdown("---")
 
     # PANEL 2: Radar de Monitoreo Independiente
-    view_strategy = render_independent_monitoring_radar()
+    view_strategy, monitor_watchlist = render_independent_monitoring_radar()
 
     # Indicador de Sincronización
     if bot_strategy and view_strategy:
@@ -683,8 +767,8 @@ def main():
         """)
         return
 
-    if not bot_watchlist:
-        st.warning("⚠️ Configura la watchlist del bot en el Panel de Control")
+    if not monitor_watchlist:
+        st.warning("⚠️ Configura la watchlist de monitoreo para ver análisis")
         return
 
     # Botón de refresh
@@ -694,9 +778,9 @@ def main():
             st.cache_data.clear()
             st.rerun()
 
-    # Obtener datos de mercado
+    # Obtener datos de mercado USANDO MONITOR_WATCHLIST (no bot_watchlist)
     with st.spinner('Obteniendo datos de mercado y consultando a todos los jueces...'):
-        df = fetch_market_data(bot_watchlist, api_key, secret_key, endpoint)
+        df = fetch_market_data(monitor_watchlist, api_key, secret_key, endpoint)
 
     if df.empty:
         st.error("No se pudieron obtener datos de mercado")
