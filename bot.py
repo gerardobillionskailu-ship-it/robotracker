@@ -528,25 +528,57 @@ def run_bot():
             # --- SELECTOR DE MÓDULO (CEREBRO) ---
             signal = None
             reason = ""
+            triggered_strategy = None
 
             # Obtener estrategia activa desde configuración
             active_strategy = config.get('active_strategy', 'rompeolas')
 
-            if active_strategy == 'wheel':
+            # ========== MODO CENTINELA: Ejecutar TODAS las estrategias principales ==========
+            if active_strategy == 'centinela':
+                log_message(f"   🛡️ Aplicando Modo Centinela (Vigilancia Total)")
+                
+                # Probar Elite
+                signal_elite, reason_elite = analizar_estrategia_elite(bars, symbol)
+                log_message(f"      🏆 Elite: {signal_elite or 'Sin señal'}")
+                
+                # Probar Rompeolas
+                signal_rompeolas, reason_rompeolas = analizar_estrategia_rompeolas(bars, symbol)
+                log_message(f"      🌊 Rompeolas: {signal_rompeolas or 'Sin señal'}")
+                
+                # Si alguna da CALL, se dispara (prioridad: Rompeolas > Elite)
+                if signal_rompeolas and "CALL" in signal_rompeolas:
+                    signal = signal_rompeolas
+                    reason = reason_rompeolas
+                    triggered_strategy = 'rompeolas'
+                    log_message(f"      ✅ TRIGGER ACTIVADO por ROMPEOLAS")
+                elif signal_elite and "CALL" in signal_elite:
+                    signal = signal_elite
+                    reason = reason_elite
+                    triggered_strategy = 'elite'
+                    log_message(f"      ✅ TRIGGER ACTIVADO por ÉLITE")
+                else:
+                    triggered_strategy = 'centinela'
+
+            # ========== MODOS INDIVIDUALES ==========
+            elif active_strategy == 'wheel':
                 log_message(f"   🔄 Aplicando Estrategia The Wheel (Opciones)")
                 signal, reason = analizar_estrategia_wheel(api, symbol)
+                triggered_strategy = 'wheel'
 
             elif active_strategy == 'orb':
                 log_message(f"   ⚡ Aplicando Estrategia ORB (Day Trading)")
                 signal, reason = analizar_estrategia_orb(api, symbol)
+                triggered_strategy = 'orb'
 
             elif active_strategy == 'rompeolas' or symbol in SECTOR_ENERGIA:
                 log_message(f"   🌊 Aplicando Estrategia Rompeolas (Energía)")
                 signal, reason = analizar_estrategia_rompeolas(bars, symbol)
+                triggered_strategy = 'rompeolas'
 
             else:  # elite (default)
                 log_message(f"   🏆 Aplicando Estrategia Élite (Tech)")
                 signal, reason = analizar_estrategia_elite(bars, symbol)
+                triggered_strategy = 'elite'
 
             # --- PROCESAR RESULTADOS ---
             if signal and "CALL" in signal:
@@ -592,11 +624,12 @@ def run_bot():
                     })
 
                     # Guardar en bitácora persistente
+                    strategy_label = f"{active_strategy} → {triggered_strategy}" if active_strategy == 'centinela' else triggered_strategy
                     save_to_trade_history({
                         "date": ny_time.strftime('%Y-%m-%d %H:%M:%S ET'),
                         "ticker": symbol,
                         "action": "BUY",
-                        "strategy": active_strategy,
+                        "strategy": strategy_label,
                         "quantity": 10,
                         "price": current_price,
                         "order_id": order.id,

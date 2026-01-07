@@ -355,6 +355,12 @@ def load_user_config():
                 "watchlist": ["XLE", "OXY", "APA", "CVX"],
                 "last_updated": datetime.now().isoformat(),
                 "strategies": {
+                    "centinela": {
+                        "name": "🛡️ Modo Centinela (Vigilancia Total)",
+                        "type": "multi",
+                        "default_tickers": ["NVDA", "TSLA", "AMD", "XLE", "OXY", "CVX", "AAPL", "MSFT"],
+                        "description": "Ejecuta Élite + Rompeolas simultáneamente. Si alguna da señal, dispara."
+                    },
                     "elite": {
                         "name": "Swing - Élite (Tech)",
                         "type": "swing",
@@ -464,6 +470,26 @@ def render_strategy_education(strategy_key, use_expander=True):
         use_expander: Si False, muestra el contenido directamente sin expander (útil cuando ya estamos dentro de un expander)
     """
     education_content = {
+        "centinela": {
+            "icon": "🛡️",
+            "title": "Modo Centinela (Vigilancia Total)",
+            "what": "Modo de **máxima eficiencia** que ejecuta múltiples estrategias simultáneamente.",
+            "how": """
+**Cómo funciona:**
+
+1. El bot analiza cada ticker con **Élite** y **Rompeolas**
+2. Si **cualquiera** de las dos da señal CALL → Ejecuta compra
+3. Registra en historial qué estrategia específica disparó (ej: "centinela → rompeolas")
+
+**Ventajas:**
+- No te pierdes oportunidades por estar en "modo equivocado"
+- Cobertura total: Tech (Elite) + Energía (Rompeolas)
+- Una sola configuración, cero mantenimiento
+
+**Tipo de operación:** Compra de acciones (10 shares por señal)
+            """,
+            "account": "✅ **Cash Account:** Sí\n✅ **Margin Account:** Sí\n\n**Ideal para:** Cuentas pequeñas que no quieren perder oportunidades"
+        },
         "elite": {
             "icon": "🏆",
             "title": "Swing - Estrategia Élite (Tech)",
@@ -654,6 +680,18 @@ def render_bot_mission_panel():
         - Compra de acciones/CALL options
         """)
 
+    # MODO CENTINELA (Destacado)
+    if st.button("🛡️ MODO CENTINELA (Vigilancia Total)", use_container_width=True, key="bot_centinela", type="primary"):
+        st.session_state['bot_strategy'] = 'centinela'
+    st.markdown("""
+    **🔥 MÁXIMA EFICIENCIA**
+    - Ejecuta Élite + Rompeolas simultáneamente
+    - Si alguna estrategia da señal → Compra
+    - Registra qué estrategia disparó
+    """)
+
+    st.markdown("---")
+
     col3, col4 = st.columns(2)
 
     with col3:
@@ -756,42 +794,8 @@ def render_independent_monitoring_radar():
     st.markdown("## 📊 Radar de Monitoreo en Tiempo Real")
     st.markdown("*Selecciona qué estrategia quieres visualizar (independiente de la misión del bot)*")
 
-    # Selector de estrategia VISUAL (solo afecta tabla)
-    st.markdown("**📊 Selecciona qué estrategia quieres visualizar en la tabla:**")
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        if st.button("🏆 Swing - Élite", use_container_width=True, key="view_elite"):
-            st.session_state['view_strategy'] = 'elite'
-        if st.button("🌊 Swing - Rompeolas", use_container_width=True, key="view_rompeolas"):
-            st.session_state['view_strategy'] = 'rompeolas'
-
-    with col2:
-        if st.button("🔄 Income - The Wheel", use_container_width=True, key="view_wheel"):
-            st.session_state['view_strategy'] = 'wheel'
-        if st.button("⚡ Day Trading - ORB", use_container_width=True, key="view_orb"):
-            st.session_state['view_strategy'] = 'orb'
-
-    with col3:
-        if st.button("📈 Larry Williams", use_container_width=True, key="view_larry"):
-            st.session_state['view_strategy'] = 'larry'
-        if st.button("📊 Wyckoff", use_container_width=True, key="view_wyckoff"):
-            st.session_state['view_strategy'] = 'wyckoff'
-
-    if 'view_strategy' not in st.session_state:
-        st.session_state['view_strategy'] = 'elite'
-
-    view_strategy = st.session_state['view_strategy']
-
-    config = load_user_config()
-    strategies = config.get('strategies', {})
-    strategy_name = strategies.get(view_strategy, {}).get('name', view_strategy.upper())
-
-    st.info(f"👁️ **Visualizando:** {strategy_name} (esto NO afecta al bot)")
-
-    # Mostrar información educativa sobre la estrategia visualizada
-    render_strategy_education(view_strategy)
+    # Radar Panorámico: Todas las estrategias visibles simultáneamente
+    st.info("👁️ **Radar Panorámico:** Muestra opinión de TODOS los jueces simultáneamente (no afecta al bot)")
 
     st.markdown("---")
 
@@ -857,87 +861,79 @@ def render_independent_monitoring_radar():
 
     st.success(f"✅ Analizando {len(monitor_watchlist)} símbolos: {', '.join(monitor_watchlist)}")
 
-    return view_strategy, monitor_watchlist
+    return monitor_watchlist  # Ya no necesitamos view_strategy
 
-def render_trading_table_with_judges(df_signals, view_strategy):
-    """Tabla de Trading con Opiniones de TODOS los Jueces"""
-    st.markdown("### 📈 Tabla de Trading con Análisis Multi-Juez")
+def render_trading_table_panoramic(df_signals):
+    """Tabla Panorámica: Todas las estrategias visibles simultáneamente"""
+    st.markdown("### 📊 Radar Panorámico - Vista de Todos los Jueces")
+
+    # Función helper para iconos
+    def signal_to_icon(signal):
+        if signal and 'CALL' in signal:
+            return "🟢 CALL"
+        elif signal and 'SELL' in signal:
+            return "🔴 SELL"
+        elif signal and 'WATCH' in signal:
+            return "🟡 WATCH"
+        else:
+            return "⚪ NEUTRAL"
 
     # Preparar datos para mostrar
     display_data = []
 
     for idx, row in df_signals.iterrows():
-        # Construir análisis de cada juez
-        larry_opinion = f"{row['larry_signal']} | {row['larry_reason']}"
-        wyckoff_opinion = f"{row['wyckoff_signal']} | {row['wyckoff_reason']}"
-        elite_opinion = f"{row['elite_signal']} | {row['elite_reason']}"
-        rompeolas_opinion = f"{row['rompeolas_signal']} | {row['rompeolas_reason']}"
-
-        # Determinar señal principal según estrategia visualizada
-        if view_strategy == 'larry':
-            main_signal = row['larry_signal']
-            main_reason = row['larry_reason']
-        elif view_strategy == 'wyckoff':
-            main_signal = row['wyckoff_signal']
-            main_reason = row['wyckoff_reason']
-        elif view_strategy == 'elite':
-            main_signal = row['elite_signal']
-            main_reason = row['elite_reason']
-        else:  # rompeolas
-            main_signal = row['rompeolas_signal']
-            main_reason = row['rompeolas_reason']
-
         display_data.append({
             'Ticker': row['symbol'],
             'Precio': f"${row['price']:.2f}",
             'RSI': f"{row['rsi']:.1f}",
-            'Señal Principal': main_signal,
-            'Análisis': main_reason,
-            'Larry Williams': larry_opinion,
-            'Wyckoff': wyckoff_opinion,
-            'Élite': elite_opinion,
-            'Rompeolas': rompeolas_opinion
+            '🌊 Rompeolas': signal_to_icon(row['rompeolas_signal']),
+            '🏆 Élite': signal_to_icon(row['elite_signal']),
+            '📈 Larry': signal_to_icon(row['larry_signal']),
+            '📊 Wyckoff': signal_to_icon(row['wyckoff_signal'])
         })
 
     display_df = pd.DataFrame(display_data)
 
-    # Aplicar colores a señal principal
-    def color_signal(val):
-        if 'CALL' in val:
+    # Aplicar colores
+    def color_icon(val):
+        if '🟢' in str(val):
             return 'background-color: #10B981; color: white; font-weight: bold;'
-        elif 'SELL' in val:
+        elif '🔴' in str(val):
             return 'background-color: #EF4444; color: white; font-weight: bold;'
-        elif 'WATCH' in val:
+        elif '🟡' in str(val):
             return 'background-color: #F59E0B; color: white; font-weight: bold;'
         else:
-            return 'background-color: #6B7280; color: white;'
+            return 'background-color: #374151; color: #D1D5DB;'
 
-    # Mostrar tabla estilizada
-    styled_df = display_df.style.applymap(color_signal, subset=['Señal Principal'])
+    # Aplicar estilo a columnas de jueces
+    juez_columns = ['🌊 Rompeolas', '🏆 Élite', '📈 Larry', '📊 Wyckoff']
+    styled_df = display_df.style.applymap(color_icon, subset=juez_columns)
+    
     st.dataframe(styled_df, use_container_width=True, height=500)
 
-    # Resumen de señales
-    st.markdown("### 🎯 Resumen de Señales según Vista Actual")
-
+    # Resumen rápido
+    st.markdown("### 🎯 Consenso de Jueces")
+    
     col1, col2, col3, col4 = st.columns(4)
-
+    
     with col1:
-        calls = display_df['Señal Principal'].str.contains('CALL').sum()
-        st.metric("📈 CALL", calls)
-
+        calls_rompeolas = sum('🟢' in str(row['🌊 Rompeolas']) for _, row in display_df.iterrows())
+        st.metric("🌊 Rompeolas CALL", calls_rompeolas)
+    
     with col2:
-        sells = display_df['Señal Principal'].str.contains('SELL').sum()
-        st.metric("📉 SELL", sells)
-
+        calls_elite = sum('🟢' in str(row['🏆 Élite']) for _, row in display_df.iterrows())
+        st.metric("🏆 Élite CALL", calls_elite)
+    
     with col3:
-        watches = display_df['Señal Principal'].str.contains('WATCH').sum()
-        st.metric("👀 WATCH", watches)
-
+        calls_larry = sum('🟢' in str(row['📈 Larry']) for _, row in display_df.iterrows())
+        st.metric("📈 Larry CALL", calls_larry)
+    
     with col4:
-        neutrals = display_df['Señal Principal'].str.contains('NEUTRAL').sum()
-        st.metric("⚪ NEUTRAL", neutrals)
+        calls_wyckoff = sum('🟢' in str(row['📊 Wyckoff']) for _, row in display_df.iterrows())
+        st.metric("📊 Wyckoff CALL", calls_wyckoff)
 
-def render_contract_opportunities(df_signals, view_strategy):
+def # Oportunidades agregadas ahora en tabla panorámica
+        # render_contract_opportunities(df_signals):
     """Muestra tarjetas de contratos cuando hay señales de compra CALL"""
     st.markdown("---")
     st.markdown("### 🎯 Oportunidades Identificadas")
@@ -1068,11 +1064,9 @@ def main():
         st.markdown("---")
 
         # PANEL 2: Radar de Monitoreo Independiente
-        view_strategy, monitor_watchlist = render_independent_monitoring_radar()
+        monitor_watchlist = render_independent_monitoring_radar()
 
-        # Indicador de Sincronización
-        if bot_strategy and view_strategy:
-            render_sync_indicator(bot_strategy, view_strategy)
+        # Radar Panorámico eliminado (solo importa bot_strategy)
 
         # Obtener credenciales de Alpaca
     api_key = st.secrets.get("ALPACA_API_KEY", os.environ.get('ALPACA_API_KEY'))
@@ -1115,10 +1109,11 @@ def main():
         df_signals = generate_all_judges_signals(df)
 
         # Mostrar tabla con todos los jueces
-        render_trading_table_with_judges(df_signals, view_strategy)
+        render_trading_table_panoramic(df_signals)
 
         # Mostrar tarjetas de contratos con oportunidades
-        render_contract_opportunities(df_signals, view_strategy)
+        # Oportunidades agregadas ahora en tabla panorámica
+        # render_contract_opportunities(df_signals)
 
         st.markdown("---")
         st.markdown("""
