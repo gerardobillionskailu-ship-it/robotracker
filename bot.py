@@ -1,22 +1,15 @@
 """
-TradeOlympo - Bot de Trading Autónomo (Arquitectura Modular v3.1-TEST)
-
-⚠️⚠️⚠️ MODO TEST DE CONEXIÓN ACTIVADO ⚠️⚠️⚠️
+TradeOlympo - Bot de Trading Autónomo v5.0
 
 ESTRATEGIAS IMPLEMENTADAS:
-1. Estrategia Élite: Reversión a la media para Tech stocks (RSI < 30 + SMA 200)
-2. Estrategia Rompeolas: Breakout de energía (Resistencia 20d + RSI > 50 + Volumen > 150%)
+1. Swing - Élite: Reversión a la media para Tech stocks (RSI < 30 + SMA 200)
+2. Swing - Rompeolas: Breakout de energía (Resistencia 20d + RSI > 50 + Volumen > 150%)
+3. Income - The Wheel: Venta de primas con Cash-Secured Puts y Covered Calls
+4. Day Trading - ORB: Opening Range Breakout (9:30-10:00 AM)
 
-Modo: TEST DE SISTEMA - COMPRA FORZADA DE OXY
 Fuente de Datos: Alpaca API con feed IEX (gratuito)
-Ejecución: 1 acción de OXY (compra forzada para verificar submit_order)
+Ejecución: Según estrategia configurada en user_config.json
 Filtro de Volumen: 100,000 acciones/día promedio
-
-TEST TEMPORAL:
-- OXY: Compra forzada (ignora condiciones de mercado)
-- Cantidad: 1 acción (en lugar de 10)
-- Objetivo: Verificar que api.submit_order() funciona en Dashboard de Alpaca
-- REVERTIR después de confirmar ejecución exitosa
 """
 import os
 import json
@@ -243,23 +236,6 @@ def analizar_estrategia_rompeolas(bars, ticker):
     if pd.isna(rsi) or pd.isna(resistencia) or pd.isna(vol_sma_val):
         return signal, reason
 
-    # ========== TEST DE CONEXIÓN (TEMPORAL) ==========
-    # FORZAR COMPRA DE OXY PARA VERIFICAR submit_order()
-    if ticker == "OXY":
-        signal = "CALL (TEST DE CONEXIÓN - COMPRA FORZADA)"
-        reason = (
-            f"⚠️ PRUEBA DE SISTEMA - COMPRA FORZADA\n"
-            f"   Ticker: {ticker}\n"
-            f"   Precio actual: ${current_price:.2f}\n"
-            f"   RSI: {rsi:.2f}\n"
-            f"   Objetivo: Verificar que api.submit_order() funciona correctamente\n"
-            f"   NOTA: Esta es una orden de prueba (1 acción)"
-        )
-        log_message(f"\n⚠️⚠️⚠️ TEST MODE ACTIVADO PARA {ticker} ⚠️⚠️⚠️")
-        log_message(f"   Esta compra es FORZADA para verificar conexión con Alpaca")
-        return signal, reason
-    # ========== FIN TEST DE CONEXIÓN ==========
-
     # --- Lógica de Disparo (Trigger) ---
     breakout = current_price > resistencia
     volumen_institucional = current_volume > (vol_sma_val * 1.5)
@@ -283,6 +259,186 @@ def analizar_estrategia_rompeolas(bars, ticker):
 
     return signal, reason
 
+# ========== MÓDULO 3: ESTRATEGIA THE WHEEL (Opciones / Income) ==========
+
+def analizar_estrategia_wheel(api, ticker):
+    """
+    ESTRATEGIA THE WHEEL (Opciones - Generación de Ingresos)
+    Enfoque: Venta de primas (theta decay) con Cash-Secured Puts y Covered Calls.
+    Ideal para: AAPL, MSFT, SPY, QQQ (alta liquidez en opciones).
+
+    Lógica del Estado de Inventario:
+    - Estado A (Cash disponible, NO tengo acciones): Vender Cash-Secured Put (CSP)
+    - Estado B (Tengo 100+ acciones asignadas): Vender Covered Call (CC)
+
+    Requisitos:
+    - Margin Account con Options Tier 2
+    - Colateral: $10,000+ por contrato
+    - Delta objetivo: ~0.30 (70% probabilidad de expirar OTM)
+    - DTE: 30-45 días
+    """
+    try:
+        # Verificar posición actual (inventario)
+        positions = api.list_positions()
+        current_position = None
+
+        for pos in positions:
+            if pos.symbol == ticker:
+                current_position = pos
+                break
+
+        shares_owned = int(current_position.qty) if current_position else 0
+
+        signal = None
+        reason = ""
+
+        # ========== ESTADO A: CASH-SECURED PUT ==========
+        if shares_owned == 0:
+            signal = "WHEEL_CSP (Vender PUT)"
+            reason = (
+                f"🔄 THE WHEEL - FASE 1: Cash-Secured Put\n"
+                f"   Ticker: {ticker}\n"
+                f"   Estado: Sin acciones en inventario\n"
+                f"   Acción recomendada: Vender 1 PUT con Delta ~0.30\n"
+                f"   DTE objetivo: 30-45 días\n"
+                f"   Nota: El bot necesita API de opciones configurada en Alpaca\n"
+                f"   (Esta versión solo detecta oportunidad, ejecución manual)"
+            )
+
+        # ========== ESTADO B: COVERED CALL ==========
+        elif shares_owned >= 100:
+            # Verificar cost basis (precio promedio de compra)
+            cost_basis = float(current_position.avg_entry_price)
+
+            signal = "WHEEL_CC (Vender CALL)"
+            reason = (
+                f"🔄 THE WHEEL - FASE 2: Covered Call\n"
+                f"   Ticker: {ticker}\n"
+                f"   Acciones en inventario: {shares_owned}\n"
+                f"   Cost Basis: ${cost_basis:.2f}\n"
+                f"   Acción recomendada: Vender 1 CALL con strike > ${cost_basis:.2f}\n"
+                f"   DTE objetivo: 30-45 días\n"
+                f"   Nota: Asegura ganancia vendiendo por encima del coste"
+            )
+
+        else:
+            # Caso: Tengo acciones pero menos de 100 (no se puede hacer CC)
+            signal = "WATCHLIST (Acciones insuficientes para CC)"
+            reason = f"The Wheel: Tienes {shares_owned} acciones. Necesitas 100 para vender Covered Call."
+
+        return signal, reason
+
+    except Exception as e:
+        log_message(f"⚠️ Error en estrategia The Wheel para {ticker}: {e}")
+        return None, ""
+
+# ========== MÓDULO 4: ESTRATEGIA ORB (Day Trading) ==========
+
+def analizar_estrategia_orb(api, ticker):
+    """
+    ESTRATEGIA ORB (Opening Range Breakout - Day Trading)
+    Enfoque: Aprovechar la volatilidad de la apertura del mercado.
+    Ideal para: SPY, QQQ, TSLA, NVDA (alta liquidez y volatilidad).
+
+    Lógica:
+    - FASE 1 (9:30-10:00 AM ET): Observación, registrar máximo y mínimo
+    - FASE 2 (10:00 AM-3:55 PM ET): Ejecutar breakout si precio > máximo + volumen alto
+    - FASE 3 (3:55 PM ET): Cerrar TODAS las posiciones (no overnight)
+
+    Requisitos:
+    - Margin Account con $25,000+ (PDT rule)
+    - Datos en tiempo real (barras de 5 minutos)
+    """
+    try:
+        now_et = datetime.now(pytz.timezone('America/New_York'))
+        market_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+        range_end = now_et.replace(hour=10, minute=0, second=0, microsecond=0)
+        market_close = now_et.replace(hour=15, minute=55, second=0, microsecond=0)
+
+        signal = None
+        reason = ""
+
+        # ========== FASE 1: OBSERVACIÓN (9:30-10:00 AM) ==========
+        if market_open <= now_et < range_end:
+            signal = "ORB_OBSERVING (Fase 1: Observando Rango)"
+            reason = (
+                f"⚡ ORB - FASE 1: Observación del Rango de Apertura\n"
+                f"   Hora actual: {now_et.strftime('%H:%M:%S ET')}\n"
+                f"   Estado: Registrando máximo y mínimo (9:30-10:00 AM)\n"
+                f"   Acción: NO operar aún, esperar hasta las 10:00 AM"
+            )
+
+        # ========== FASE 2: EJECUCIÓN (10:00 AM - 3:55 PM) ==========
+        elif range_end <= now_et < market_close:
+            # Obtener datos de 5 minutos del rango de apertura
+            bars_5min = api.get_bars(
+                ticker,
+                tradeapi.TimeFrame.Minute,
+                start=market_open.strftime('%Y-%m-%d %H:%M:%S'),
+                end=range_end.strftime('%Y-%m-%d %H:%M:%S'),
+                feed='iex'
+            ).df
+
+            if not bars_5min.empty and len(bars_5min) >= 6:
+                opening_range_high = bars_5min['high'].max()
+                opening_range_low = bars_5min['low'].min()
+
+                # Obtener precio actual
+                latest_trade = api.get_latest_trade(ticker)
+                current_price = float(latest_trade.price)
+
+                # Obtener volumen actual
+                current_bar = api.get_bars(
+                    ticker,
+                    tradeapi.TimeFrame.Minute,
+                    limit=1,
+                    feed='iex'
+                ).df
+
+                current_volume = current_bar['volume'].iloc[-1] if not current_bar.empty else 0
+
+                # Calcular volumen promedio
+                avg_volume = bars_5min['volume'].mean()
+
+                # ========== DETECTAR BREAKOUT ==========
+                if current_price > opening_range_high and current_volume > (avg_volume * 1.5):
+                    signal = "ORB_LONG (Comprar Breakout Alcista)"
+                    reason = (
+                        f"⚡ ORB - FASE 2: Breakout Alcista Detectado\n"
+                        f"   Precio actual: ${current_price:.2f}\n"
+                        f"   Rango apertura: ${opening_range_low:.2f} - ${opening_range_high:.2f}\n"
+                        f"   Breakout: Precio > Máximo del rango\n"
+                        f"   Volumen confirmado: {int(current_volume):,} > {int(avg_volume * 1.5):,}\n"
+                        f"   ⚠️ RECORDATORIO: Cerrar posición antes de 3:55 PM ET"
+                    )
+                else:
+                    signal = "ORB_WAITING (Esperando Breakout)"
+                    reason = (
+                        f"⚡ ORB - FASE 2: Esperando Breakout\n"
+                        f"   Precio actual: ${current_price:.2f}\n"
+                        f"   Rango apertura: ${opening_range_low:.2f} - ${opening_range_high:.2f}\n"
+                        f"   Condición: Precio debe romper ${opening_range_high:.2f} con volumen alto"
+                    )
+            else:
+                signal = "ORB_NO_DATA (Datos insuficientes)"
+                reason = "ORB: No hay suficientes datos del rango de apertura."
+
+        # ========== FASE 3: CIERRE DE POSICIONES (3:55 PM+) ==========
+        else:
+            signal = "ORB_CLOSE_ALL (Cerrar todas las posiciones)"
+            reason = (
+                f"⚡ ORB - FASE 3: Cierre de Mercado\n"
+                f"   Hora actual: {now_et.strftime('%H:%M:%S ET')}\n"
+                f"   Acción: Cerrar TODAS las posiciones ORB\n"
+                f"   Nota: Estrategia NO deja posiciones overnight"
+            )
+
+        return signal, reason
+
+    except Exception as e:
+        log_message(f"⚠️ Error en estrategia ORB para {ticker}: {e}")
+        return None, ""
+
 # ========== FUNCIÓN PRINCIPAL (ORQUESTADOR) ==========
 
 def run_bot():
@@ -290,9 +446,10 @@ def run_bot():
     config = load_config()
 
     log_message("=" * 60)
-    log_message(f"🤖 INICIANDO TRADEOLYMPO AUTO-BOT (Modular)")
+    log_message(f"🤖 INICIANDO TRADEOLYMPO v5.0 AUTO-BOT")
     log_message(f"📅 Fecha: {datetime.now(pytz.timezone('America/New_York'))}")
-    log_message(f"📋 Estrategia activa: {config.get('active_strategy', 'modular')}")
+    log_message(f"📋 Estrategia activa: {config.get('active_strategy', 'rompeolas')}")
+    log_message(f"📊 Estrategias disponibles: elite, rompeolas, wheel, orb")
     log_message("=" * 60)
 
     if not API_KEY or not SECRET_KEY:
@@ -345,10 +502,22 @@ def run_bot():
             signal = None
             reason = ""
 
-            if symbol in SECTOR_ENERGIA:
+            # Obtener estrategia activa desde configuración
+            active_strategy = config.get('active_strategy', 'rompeolas')
+
+            if active_strategy == 'wheel':
+                log_message(f"   🔄 Aplicando Estrategia The Wheel (Opciones)")
+                signal, reason = analizar_estrategia_wheel(api, symbol)
+
+            elif active_strategy == 'orb':
+                log_message(f"   ⚡ Aplicando Estrategia ORB (Day Trading)")
+                signal, reason = analizar_estrategia_orb(api, symbol)
+
+            elif active_strategy == 'rompeolas' or symbol in SECTOR_ENERGIA:
                 log_message(f"   🌊 Aplicando Estrategia Rompeolas (Energía)")
                 signal, reason = analizar_estrategia_rompeolas(bars, symbol)
-            else:
+
+            else:  # elite (default)
                 log_message(f"   🏆 Aplicando Estrategia Élite (Tech)")
                 signal, reason = analizar_estrategia_elite(bars, symbol)
 

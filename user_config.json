@@ -13,8 +13,9 @@
   "last_updated": "2026-01-07T03:32:09.464264",
   "strategies": {
     "elite": {
-      "name": "Estrategia \u00c9lite (Reversi\u00f3n)",
-      "description": "Tech stocks con RSI < 30 + tendencia alcista",
+      "name": "Swing - \u00c9lite (Tech)",
+      "type": "swing",
+      "description": "Reversi\u00f3n a la media en tech stocks con RSI < 30 + tendencia alcista",
       "default_tickers": [
         "NVDA",
         "TSLA",
@@ -26,7 +27,8 @@
       ]
     },
     "rompeolas": {
-      "name": "Estrategia Rompeolas (Breakout)",
+      "name": "Swing - Rompeolas (Energ\u00eda)",
+      "type": "swing",
       "description": "Breakout de energ\u00eda con RSI > 50 + volumen alto",
       "default_tickers": [
         "XLE",
@@ -37,6 +39,31 @@
         "SLB",
         "HAL",
         "VLO"
+      ]
+    },
+    "wheel": {
+      "name": "Income - The Wheel (Opciones)",
+      "type": "options",
+      "description": "Venta de primas con Cash-Secured Puts y Covered Calls. Generaci\u00f3n de ingresos con theta decay.",
+      "default_tickers": [
+        "AAPL",
+        "MSFT",
+        "SPY",
+        "QQQ",
+        "NVDA",
+        "AMD"
+      ]
+    },
+    "orb": {
+      "name": "Day Trading - ORB (Acciones)",
+      "type": "daytrading",
+      "description": "Opening Range Breakout. Operativa intrad\u00eda aprovechando volatilidad de apertura.",
+      "default_tickers": [
+        "SPY",
+        "QQQ",
+        "TSLA",
+        "NVDA",
+        "AMD"
       ]
     }
   },
