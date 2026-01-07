@@ -13,9 +13,9 @@
   "last_updated": "2026-01-07T03:32:09.464264",
   "strategies": {
     "elite": {
-      "name": "Swing - \u00c9lite (Tech)",
+      "name": "Swing - Élite (Tech)",
       "type": "swing",
-      "description": "Reversi\u00f3n a la media en tech stocks con RSI < 30 + tendencia alcista",
+      "description": "Reversión a la media en tech stocks con RSI < 30 + tendencia alcista",
       "default_tickers": [
         "NVDA",
         "TSLA",
@@ -27,9 +27,9 @@
       ]
     },
     "rompeolas": {
-      "name": "Swing - Rompeolas (Energ\u00eda)",
+      "name": "Swing - Rompeolas (Energía)",
       "type": "swing",
-      "description": "Breakout de energ\u00eda con RSI > 50 + volumen alto",
+      "description": "Breakout de energía con RSI > 50 + volumen alto",
       "default_tickers": [
         "XLE",
         "OXY",
@@ -44,7 +44,7 @@
     "wheel": {
       "name": "Income - The Wheel (Opciones)",
       "type": "options",
-      "description": "Venta de primas con Cash-Secured Puts y Covered Calls. Generaci\u00f3n de ingresos con theta decay.",
+      "description": "Venta de primas con Cash-Secured Puts y Covered Calls. Generación de ingresos con theta decay.",
       "default_tickers": [
         "AAPL",
         "MSFT",
@@ -57,13 +57,32 @@
     "orb": {
       "name": "Day Trading - ORB (Acciones)",
       "type": "daytrading",
-      "description": "Opening Range Breakout. Operativa intrad\u00eda aprovechando volatilidad de apertura.",
+      "description": "Opening Range Breakout. Operativa intradía aprovechando volatilidad de apertura.",
       "default_tickers": [
         "SPY",
         "QQQ",
         "TSLA",
         "NVDA",
         "AMD"
+      ]
+    },
+    "centinela": {
+      "name": "🛡️ Modo Centinela (Vigilancia Total)",
+      "type": "multi",
+      "description": "Ejecuta Élite + Rompeolas simultáneamente. Si alguna estrategia da señal de CALL, dispara la compra. Registra qué estrategia activó el trigger.",
+      "default_tickers": [
+        "NVDA",
+        "TSLA",
+        "AMD",
+        "AAPL",
+        "MSFT",
+        "META",
+        "XLE",
+        "OXY",
+        "CVX",
+        "COP",
+        "SLB",
+        "HAL"
       ]
     }
   },
