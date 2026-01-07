@@ -1,15 +1,16 @@
 {
-  "active_strategy": "elite",
+  "active_strategy": "rompeolas",
   "watchlist": [
-    "NVDA",
-    "TSLA",
-    "AMD",
-    "AAPL",
-    "MSFT",
-    "META",
-    "COIN"
+    "XLE",
+    "OXY",
+    "APA",
+    "CVX",
+    "COP",
+    "SLB",
+    "HAL",
+    "VLO"
   ],
-  "last_updated": "2026-01-06T19:57:58.451696",
+  "last_updated": "2026-01-07T03:32:09.464264",
   "strategies": {
     "elite": {
       "name": "Estrategia \u00c9lite (Reversi\u00f3n)",
