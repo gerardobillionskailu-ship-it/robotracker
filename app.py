@@ -944,61 +944,6 @@ def render_trading_table_panoramic(df_signals):
         calls_wyckoff = sum('🟢' in str(row['📊 Wyckoff']) for _, row in display_df.iterrows())
         st.metric("📊 Wyckoff CALL", calls_wyckoff)
 
-def # Oportunidades agregadas ahora en tabla panorámica
-        # render_contract_opportunities(df_signals):
-    """Muestra tarjetas de contratos cuando hay señales de compra CALL"""
-    st.markdown("---")
-    st.markdown("### 🎯 Oportunidades Identificadas")
-
-    # Filtrar señales CALL según estrategia visualizada
-    opportunities = []
-
-    for idx, row in df_signals.iterrows():
-        # Determinar señal según estrategia visualizada
-        if view_strategy == 'larry':
-            signal = row['larry_signal']
-            reason = row['larry_reason']
-        elif view_strategy == 'wyckoff':
-            signal = row['wyckoff_signal']
-            reason = row['wyckoff_reason']
-        elif view_strategy == 'elite':
-            signal = row['elite_signal']
-            reason = row['elite_reason']
-        else:  # rompeolas
-            signal = row['rompeolas_signal']
-            reason = row['rompeolas_reason']
-
-        if signal == "CALL":
-            # Calcular parámetros del contrato
-            current_price = row['price']
-            strike_price = current_price * 0.97  # 3% ITM (In The Money)
-            expiration_date = datetime.now() + timedelta(days=45)
-            stop_loss = current_price * 0.95  # Stop loss al 5% debajo del precio actual
-
-            opportunities.append({
-                'ticker': row['symbol'],
-                'price': current_price,
-                'strike': strike_price,
-                'expiration': expiration_date,
-                'stop_loss': stop_loss,
-                'reason': reason
-            })
-
-    if opportunities:
-        st.markdown(f"**Se detectaron {len(opportunities)} oportunidad(es) de compra según estrategia {view_strategy.upper()}:**")
-
-        for opp in opportunities:
-            st.success(f"""
-**🎯 {opp['ticker']}** - Señal de CALL
-📊 **Precio Actual:** ${opp['price']:.2f}
-💰 **Contrato Sugerido:** CALL ${opp['strike']:.2f} (3% ITM)
-📅 **Vencimiento:** {opp['expiration'].strftime('%Y-%m-%d')} (45 días)
-🛡️ **Stop Loss Sugerido:** ${opp['stop_loss']:.2f} (-5%)
-📝 **Fundamento:** {opp['reason']}
-            """)
-    else:
-        st.info(f"ℹ️ No hay señales de CALL activas en la estrategia {view_strategy.upper()} en este momento.")
-
 # ========== MAIN ==========
 
 def render_trade_history():
