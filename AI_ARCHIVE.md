@@ -64,6 +64,84 @@
 
 ---
 
+### v4.1 - UX Mejorado + Tesis Venezuela (Sectores Estratégicos)
+
+**Decisión UX**: Implementar flujo híbrido "Seleccionar → Inyectar → Editar → Analizar"
+
+**Problema Resuelto**:
+- Usuario tenía que elegir entre lista fija o escritura manual completa
+- Faltaban listas curadas basadas en contexto geopolítico actual (Venezuela)
+- No había manera de cargar rápidamente un sector y luego personalizarlo
+
+**Implementación**:
+
+1. **Selectbox de Sectores Estratégicos**:
+   - `st.selectbox()` con 4 sectores curados
+   - Formato: `{key: sector['name']}` para mostrar nombres amigables
+   - Opción vacía por defecto: "-- Selecciona un Sector --"
+
+2. **Sincronización vía session_state**:
+   ```python
+   if st.session_state.get('last_selected_sector') != selected_sector_key:
+       st.session_state['monitor_watchlist_text'] = ", ".join(sector_tickers)
+       st.session_state['last_selected_sector'] = selected_sector_key
+   ```
+   - Solo actualiza text_area cuando cambia el sector
+   - Evita sobrescritura accidental durante edición manual
+
+3. **Text Area Editable**:
+   - Usuario puede modificar tickers después de inyección
+   - Análisis usa contenido final del text_area, no el selectbox
+   - `monitor_watchlist` parsea texto: `[ticker.strip().upper() for ticker in watchlist_text.split(',')]`
+
+**Sectores Estratégicos Curados**:
+
+1. **🛢️ Venezuela Recovery & Oil Services** (10 tickers):
+   - CVX (Chevron - Operador principal en Venezuela)
+   - SLB (Schlumberger - Servicios reactivación)
+   - HAL (Halliburton - Servicios infraestructura)
+   - BKR (Baker Hughes - Tecnología)
+   - VLO (Valero - Refinador de crudo pesado)
+   - WFRD (Weatherford - Alta volatilidad/contratos)
+   - XOM (Exxon - Estabilidad sectorial)
+   - COP (ConocoPhillips - Estabilidad/Deuda)
+   - MPC (Marathon - Refinación)
+   - OXY (Occidental - Respaldo Buffett)
+   - **Tesis**: Reactivación petrolera venezolana post-régimen Maduro, aumento producción, contratos de servicios
+
+2. **💻 Big Tech & AI** (8 tickers):
+   - NVDA, MSFT, AAPL, AMD, GOOGL, META, TSM, AVGO
+   - **Tesis**: Líderes en IA y semiconductores
+
+3. **₿ Crypto Proxies** (6 tickers):
+   - COIN, MSTR, MARA, RIOT, CLSK, IBIT
+   - **Tesis**: Exposición a criptomonedas vía mercados tradicionales
+
+4. **🛡️ Defensa & Aero** (6 tickers):
+   - LMT, RTX, NOC, GD, BA, PLTR
+   - **Tesis**: Sector defensa y aeroespacial
+
+**Cambio en Flujo de Datos**:
+- ANTES: `render_independent_monitoring_radar()` → retorna `view_strategy` → usa `bot_watchlist`
+- AHORA: `render_independent_monitoring_radar()` → retorna `(view_strategy, monitor_watchlist)` → usa `monitor_watchlist`
+- `main()` actualizado: `df = fetch_market_data(monitor_watchlist, ...)` en lugar de `bot_watchlist`
+
+**Trade-offs**:
+- ✅ Flexibilidad: Pre-carga rápida + edición manual
+- ✅ Inteligencia de mercado: Tesis Venezuela actualizada
+- ✅ UX intuitiva: Flujo natural seleccionar → editar → analizar
+- ❌ Más complejidad en session_state (2 variables: `monitor_watchlist_text`, `last_selected_sector`)
+
+**Fundamento Tesis Venezuela**:
+La captura de Nicolás Maduro y cambio de régimen en Venezuela crea oportunidad en sector petrolero:
+- Reactivación de producción (de ~700K a 2M barriles/día potencial)
+- Contratos de servicios (SLB, HAL, BKR)
+- Refinadores de crudo pesado (VLO, MPC)
+- Operadores establecidos (CVX ya opera, XOM podría retornar)
+- Alta volatilidad en empresas pequeñas (WFRD)
+
+---
+
 ### Ejecución Automática Activada (v3.1)
 
 **Decisión**: Activar `api.submit_order()` para ejecución real
@@ -236,6 +314,16 @@ def calcular_sma(series, window):
 ## Changelog Detallado
 
 ### 2026-01-07
+- [FEATURE] v4.1: UX Mejorado + Tesis Venezuela
+- [FEATURE] Flujo "Seleccionar → Inyectar → Editar → Analizar"
+- [FEATURE] Sectores Estratégicos curados (4 sectores, 30 tickers total)
+- [FEATURE] Venezuela Recovery & Oil Services (10 tickers: CVX, SLB, HAL, BKR, VLO, WFRD, XOM, COP, MPC, OXY)
+- [FEATURE] Big Tech & AI (8 tickers)
+- [FEATURE] Crypto Proxies (6 tickers)
+- [FEATURE] Defensa & Aero (6 tickers)
+- [FEATURE] st.selectbox() que inyecta tickers en st.text_area() editable
+- [FEATURE] Sincronización vía session_state (monitor_watchlist_text, last_selected_sector)
+- [FEATURE] monitor_watchlist independiente de bot_watchlist
 - [FEATURE] v4.0: Arquitectura de Doble Propósito
 - [FEATURE] Panel de Control del Bot (Misión)
 - [FEATURE] Radar de Monitoreo Independiente
