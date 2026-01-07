@@ -39,5 +39,61 @@
         "VLO"
       ]
     }
+  },
+  "strategic_sectors": {
+    "venezuela_recovery": {
+      "name": "🛢️ Venezuela Recovery & Oil Services",
+      "tickers": [
+        "CVX",
+        "SLB",
+        "HAL",
+        "VLO",
+        "WFRD",
+        "XOM",
+        "COP",
+        "MPC",
+        "OXY",
+        "PBR"
+      ],
+      "description": "Empresas con exposición a la reactivación petrolera venezolana"
+    },
+    "big_tech": {
+      "name": "💻 Big Tech & AI",
+      "tickers": [
+        "NVDA",
+        "MSFT",
+        "AAPL",
+        "AMD",
+        "GOOGL",
+        "META",
+        "TSM",
+        "AVGO"
+      ],
+      "description": "Gigantes tecnológicos y líderes en IA"
+    },
+    "crypto_proxies": {
+      "name": "₿ Crypto Proxies",
+      "tickers": [
+        "COIN",
+        "MSTR",
+        "MARA",
+        "RIOT",
+        "CLSK",
+        "IBIT"
+      ],
+      "description": "Proxies de criptomonedas en mercados tradicionales"
+    },
+    "defense_aero": {
+      "name": "🛡️ Defensa & Aero",
+      "tickers": [
+        "LMT",
+        "RTX",
+        "NOC",
+        "GD",
+        "BA",
+        "PLTR"
+      ],
+      "description": "Sector defensa y aeroespacial"
+    }
   }
 }
