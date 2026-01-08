@@ -950,32 +950,70 @@ def render_trading_table_panoramic(df_signals):
 
     display_df = pd.DataFrame(display_data)
 
-    # MASTER: Tabla interactiva con selección de fila
+    # MASTER: Selector de Ticker + Tabla estática (compatible con Streamlit antiguo)
     st.markdown("---")
     
-    # Capturar evento de selección de tabla
-    selection = st.dataframe(
+    # Preparar lista de tickers con indicador visual de señales
+    ticker_options = []
+    for idx, row in display_df.iterrows():
+        ticker = row['Ticker']
+        # Verificar si tiene alguna señal CALL
+        has_call = any('🟢' in str(row[col]) for col in ['🌊 Rompeolas', '🏆 Élite', '📈 Larry', '📊 Wyckoff'])
+        if has_call:
+            ticker_options.append(f"🟢 {ticker}")
+        else:
+            ticker_options.append(f"⚪ {ticker}")
+    
+    # Selectbox para selección de ticker
+    col_select, col_hint = st.columns([1, 2])
+    
+    with col_select:
+        # Callback para actualizar session_state cuando cambia selección
+        def on_ticker_select():
+            selected = st.session_state.get('ticker_selector_key', '')
+            if selected:
+                # Extraer ticker sin el icono
+                ticker = selected.split(' ')[1] if ' ' in selected else selected
+                st.session_state['selected_ticker_visual'] = ticker
+        
+        # Inicializar índice si no existe
+        if 'selected_ticker_visual' not in st.session_state and ticker_options:
+            # Por defecto seleccionar el primer ticker con señal CALL, o el primero
+            default_ticker = ticker_options[0]
+            st.session_state['selected_ticker_visual'] = default_ticker.split(' ')[1] if ' ' in default_ticker else default_ticker
+        
+        # Determinar índice inicial del selectbox
+        current_ticker = st.session_state.get('selected_ticker_visual', '')
+        default_index = 0
+        for i, opt in enumerate(ticker_options):
+            if current_ticker in opt:
+                default_index = i
+                break
+        
+        selected_ticker_display = st.selectbox(
+            "🎯 Selecciona ticker para análisis detallado",
+            options=ticker_options,
+            index=default_index,
+            key="ticker_selector_key",
+            on_change=on_ticker_select,
+            help="Tickers con 🟢 tienen señales activas de CALL. Cambia la selección para ver detalles diferentes."
+        )
+        
+        # Extraer ticker limpio (sin icono)
+        selected_ticker = selected_ticker_display.split(' ')[1] if ' ' in selected_ticker_display else selected_ticker_display
+        st.session_state['selected_ticker_visual'] = selected_ticker
+    
+    with col_hint:
+        st.info("💡 **Interactivo:** Cambia el ticker en el selector para ver detalles del contrato sugerido abajo")
+    
+    st.markdown("---")
+    
+    # Tabla estática (SIN on_select - compatible con todas las versiones de Streamlit)
+    st.dataframe(
         display_df,
         use_container_width=True,
-        height=500,
-        on_select="rerun",
-        selection_mode="single-row",
-        key="radar_table_interactive"
+        height=500
     )
-    
-    # CRÍTICO: Actualizar session_state con ticker seleccionado
-    selected_ticker = None
-    
-    if selection.selection.rows:
-        # El usuario hizo clic en una fila
-        selected_row_idx = selection.selection.rows[0]
-        selected_ticker = display_df.iloc[selected_row_idx]['Ticker']
-        
-        # Guardar en session_state para persistencia
-        st.session_state['selected_ticker_visual'] = selected_ticker
-    elif 'selected_ticker_visual' in st.session_state:
-        # Usar el ticker previamente seleccionado
-        selected_ticker = st.session_state['selected_ticker_visual']
 
     # Resumen rápido (siempre visible)
     st.markdown("### 🎯 Consenso de Jueces")
