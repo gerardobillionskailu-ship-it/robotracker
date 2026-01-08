@@ -950,44 +950,32 @@ def render_trading_table_panoramic(df_signals):
 
     display_df = pd.DataFrame(display_data)
 
-    # MASTER: Selector de Ticker para análisis detallado
+    # MASTER: Tabla interactiva con selección de fila
     st.markdown("---")
-    col_select, col_info = st.columns([1, 2])
     
-    with col_select:
-        # Lista de tickers con señales CALL (destacados)
-        tickers_with_calls = []
-        all_tickers = []
-        
-        for idx, row in display_df.iterrows():
-            ticker = row['Ticker']
-            all_tickers.append(ticker)
-            # Verificar si tiene alguna señal CALL
-            if any('🟢' in str(row[col]) for col in ['🌊 Rompeolas', '🏆 Élite', '📈 Larry', '📊 Wyckoff']):
-                tickers_with_calls.append(f"🟢 {ticker}")
-            else:
-                tickers_with_calls.append(f"⚪ {ticker}")
-        
-        selected_ticker_display = st.selectbox(
-            "🎯 Selecciona ticker para análisis detallado",
-            options=tickers_with_calls,
-            help="Tickers con 🟢 tienen señales activas de CALL"
-        )
-        
-        # Extraer ticker sin el icono
-        selected_ticker = selected_ticker_display.split(' ')[1]
-    
-    with col_info:
-        st.info("💡 Selecciona un ticker con 🟢 para ver detalles del contrato sugerido")
-    
-    st.markdown("---")
-
-    # Tabla estática (sin selección interactiva - compatible con Streamlit antiguo)
-    st.dataframe(
+    # Capturar evento de selección de tabla
+    selection = st.dataframe(
         display_df,
         use_container_width=True,
-        height=500
+        height=500,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="radar_table_interactive"
     )
+    
+    # CRÍTICO: Actualizar session_state con ticker seleccionado
+    selected_ticker = None
+    
+    if selection.selection.rows:
+        # El usuario hizo clic en una fila
+        selected_row_idx = selection.selection.rows[0]
+        selected_ticker = display_df.iloc[selected_row_idx]['Ticker']
+        
+        # Guardar en session_state para persistencia
+        st.session_state['selected_ticker_visual'] = selected_ticker
+    elif 'selected_ticker_visual' in st.session_state:
+        # Usar el ticker previamente seleccionado
+        selected_ticker = st.session_state['selected_ticker_visual']
 
     # Resumen rápido (siempre visible)
     st.markdown("### 🎯 Consenso de Jueces")
