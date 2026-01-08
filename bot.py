@@ -72,44 +72,85 @@ def save_to_trade_history(trade_record):
         log_message(f"   ⚠️ Error guardando en trade_history.json: {e}")
 
 
-def is_market_open():
+def is_crypto_symbol(symbol):
+    """
+    Detecta si un símbolo es criptomoneda
+
+    Args:
+        symbol: Ticker del activo
+
+    Returns:
+        bool: True si es cripto, False si es acción
+    """
+    crypto_symbols = ['BTC/USD', 'BTCUSD', 'ETH/USD', 'ETHUSD']
+    return symbol.upper() in crypto_symbols
+
+def is_market_open(watchlist=None):
     """
     Verifica si el mercado de NY está abierto
     Horario: 9:30 AM - 4:00 PM ET, Lunes a Viernes
+
+    BYPASS PARA CRIPTO: Si hay criptomonedas en la watchlist, retorna True (24/7)
+
+    Args:
+        watchlist: Lista de tickers a analizar (opcional)
+
+    Returns:
+        bool: True si mercado abierto o hay cripto, False otherwise
     """
+    # BYPASS: Si hay criptomonedas, mercado "siempre abierto" (24/7)
+    if watchlist:
+        for symbol in watchlist:
+            if is_crypto_symbol(symbol):
+                return True  # Cripto opera 24/7
+
     ny_tz = pytz.timezone('America/New_York')
     now = datetime.now(ny_tz)
-    
+
     # Verificar si es fin de semana
     if now.weekday() >= 5:  # 5 = Sábado, 6 = Domingo
         return False
-    
+
     # Verificar horario (9:30 AM - 4:00 PM)
     market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
     market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
-    
+
     return market_open <= now <= market_close
 
-def calculate_dynamic_quantity(price, budget=1000):
+def calculate_dynamic_quantity(price, budget=1000, symbol=None):
     """
-    Calcula cantidad de acciones a comprar basada en presupuesto máximo
-    
+    Calcula cantidad de acciones/cripto a comprar basada en presupuesto máximo
+
+    CRIPTO: Usa $100 budget para pruebas seguras (BTC/USD, ETH/USD)
+    ACCIONES: Usa $1000 budget para operaciones normales
+
     Args:
-        price: Precio actual de la acción
+        price: Precio actual del activo
         budget: Presupuesto máximo por operación (default: $1000)
-    
+        symbol: Símbolo del activo (para detectar si es cripto)
+
     Returns:
-        int: Cantidad de acciones a comprar
+        tuple: (cantidad, es_cripto, notional_value)
+            - cantidad: float para cripto, int para acciones
+            - es_cripto: bool
+            - notional_value: USD para cripto
     """
     if price <= 0:
-        return 0
-    
+        return 0, False, 0
+
+    # CRIPTO: $100 budget, cantidad fraccionaria
+    if symbol and is_crypto_symbol(symbol):
+        test_budget = 100  # Prueba segura con $100
+        qty_fractional = test_budget / price
+        return qty_fractional, True, test_budget
+
+    # ACCIONES: $1000 budget, cantidad entera
     qty = int(budget / price)
-    
+
     # Mínimo 1 acción, máximo 100
     qty = max(1, min(qty, 100))
-    
-    return qty
+
+    return qty, False, qty * price
 
 # ========== FUNCIONES DE CONFIGURACIÓN ==========
 
@@ -506,6 +547,76 @@ def analizar_estrategia_orb(api, ticker):
         log_message(f"⚠️ Error en estrategia ORB para {ticker}: {e}")
         return None, ""
 
+# ========== MÓDULO 5: ESTRATEGIA FLASH TEST (CRYPTO SCALPING) ==========
+
+def analizar_estrategia_flash_test(api, symbol):
+    """
+    ESTRATEGIA FLASH TEST (Crypto Scalping - BTC/USD)
+    Enfoque: Scalping rápido en criptomonedas 24/7
+    Ideal para: BTC/USD, ETH/USD (prueba nocturna)
+
+    Lógica:
+    - Usa velas de 5 minutos (o 1 min si disponible)
+    - COMPRA si RSI(14) < 40 (sobreventa leve)
+    - Take Profit: +0.5% (salida rápida)
+    - Stop Loss: -0.5% (riesgo controlado)
+
+    Objetivo: Ver una operación abrirse y cerrarse rápido (prueba funcional)
+    """
+    try:
+        # Obtener datos de 5 minutos (últimas 100 velas = ~8 horas)
+        end_time = datetime.now()
+        start_time = end_time - timedelta(hours=8)
+
+        bars_5min = api.get_bars(
+            symbol,
+            tradeapi.TimeFrame(5, tradeapi.TimeFrameUnit.Minute),
+            start=start_time.isoformat(),
+            end=end_time.isoformat(),
+            feed='iex'
+        ).df
+
+        if bars_5min.empty or len(bars_5min) < 20:
+            log_message(f"   ⚠️ Datos insuficientes para {symbol} (necesita al menos 20 velas de 5min)")
+            return None, ""
+
+        # Calcular RSI(14) en velas de 5 minutos
+        closes = bars_5min['close']
+        rsi_series = calcular_rsi(closes, period=14)
+        current_rsi = rsi_series.iloc[-1]
+        current_price = float(closes.iloc[-1])
+
+        # Calcular niveles de salida
+        take_profit_price = current_price * 1.005  # +0.5%
+        stop_loss_price = current_price * 0.995    # -0.5%
+
+        signal = None
+        reason = ""
+
+        # LÓGICA DE COMPRA: RSI < 40 (sobreventa leve)
+        if pd.notna(current_rsi) and current_rsi < 40:
+            signal = "CALL (Flash Test Scalping)"
+            reason = (
+                f"⚡ FLASH TEST - SCALPING BTC/USD\n"
+                f"   Precio: ${current_price:.2f}\n"
+                f"   RSI(14) 5min: {current_rsi:.2f} (sobreventa leve)\n"
+                f"   📈 Take Profit: ${take_profit_price:.2f} (+0.5%)\n"
+                f"   🛑 Stop Loss: ${stop_loss_price:.2f} (-0.5%)\n"
+                f"   ⏱️ Timeframe: 5 minutos\n"
+                f"   🎯 Objetivo: Operación rápida de prueba\n"
+                f"   💰 Budget: $100 USD (prueba segura)"
+            )
+        else:
+            reason = f"Flash Test: RSI(14) = {current_rsi:.2f} (esperando < 40 para compra)"
+
+        return signal, reason
+
+    except Exception as e:
+        log_message(f"⚠️ Error en estrategia Flash Test para {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, ""
+
 # ========== FUNCIÓN PRINCIPAL (ORQUESTADOR) ==========
 
 def run_bot():
@@ -539,6 +650,104 @@ def run_bot():
     for symbol in watchlist:
         try:
             log_message(f"\n🔍 Analizando: {symbol}...")
+
+            # ========== BYPASS PARA CRIPTO: FLASH TEST 24/7 ==========
+            if is_crypto_symbol(symbol):
+                log_message(f"   🌙 DETECTADO: Criptomoneda {symbol} → Aplicando Flash Test (24/7)")
+                signal, reason = analizar_estrategia_flash_test(api, symbol)
+                triggered_strategy = 'flash_test'
+
+                # Si hay señal, procesar inmediatamente (skip lógica de acciones)
+                if signal and "CALL" in signal:
+                    log_message(f"\n   🚀 SEÑAL ENCONTRADA: {symbol}")
+                    log_message(f"      Tipo: {signal}")
+                    log_message(f"      {reason}")
+
+                    # Obtener precio actual de velas de 5 minutos
+                    end_time = datetime.now()
+                    start_time = end_time - timedelta(hours=1)
+                    bars_5min = api.get_bars(
+                        symbol,
+                        tradeapi.TimeFrame(5, tradeapi.TimeFrameUnit.Minute),
+                        start=start_time.isoformat(),
+                        end=end_time.isoformat(),
+                        feed='iex'
+                    ).df
+
+                    current_price = float(bars_5min['close'].iloc[-1])
+
+                    # EJECUCIÓN CRIPTO: Usar notional ($100) en lugar de qty
+                    try:
+                        qty, es_cripto, notional_value = calculate_dynamic_quantity(current_price, symbol=symbol)
+
+                        log_message(f"\n   📈 EJECUTANDO ORDEN DE COMPRA (CRIPTO):")
+                        log_message(f"      Ticker: {symbol}")
+                        log_message(f"      Notional: ${notional_value:.2f} USD")
+                        log_message(f"      Cantidad estimada: {qty:.6f} {symbol.split('/')[0]}")
+                        log_message(f"      Tipo: Market Order")
+                        log_message(f"      Precio aproximado: ${current_price:.2f}")
+
+                        # Alpaca Crypto usa 'notional' en lugar de 'qty'
+                        order = api.submit_order(
+                            symbol=symbol.replace('/', ''),  # BTC/USD → BTCUSD
+                            notional=notional_value,  # $100 USD
+                            side='buy',
+                            type='market',
+                            time_in_force='gtc'  # Good 'til cancelled (cripto 24/7)
+                        )
+
+                        log_message(f"   ✅ ORDEN EJECUTADA EXITOSAMENTE")
+                        log_message(f"      Order ID: {order.id}")
+                        log_message(f"      Status: {order.status}")
+
+                        # Timestamp en New York Time
+                        ny_time = datetime.now(pytz.timezone('America/New_York'))
+
+                        resultados.append({
+                            "ticker": symbol,
+                            "signal": signal,
+                            "reason": reason,
+                            "price": current_price,
+                            "order_id": order.id,
+                            "order_status": order.status,
+                            "quantity": qty,
+                            "notional": notional_value,
+                            "timestamp": ny_time.isoformat(),
+                            "strategy": "flash_test"
+                        })
+
+                        # Guardar en bitácora persistente
+                        save_to_trade_history({
+                            "date": ny_time.strftime('%Y-%m-%d %H:%M:%S ET'),
+                            "ticker": symbol,
+                            "action": "BUY",
+                            "strategy": "flash_test",
+                            "quantity": qty,
+                            "notional": notional_value,
+                            "price": current_price,
+                            "order_id": order.id,
+                            "signal": signal
+                        })
+
+                    except Exception as order_error:
+                        log_message(f"   ❌ ERROR AL EJECUTAR ORDEN: {order_error}")
+                        ny_time = datetime.now(pytz.timezone('America/New_York'))
+                        resultados.append({
+                            "ticker": symbol,
+                            "signal": signal,
+                            "reason": reason,
+                            "price": current_price,
+                            "error": str(order_error),
+                            "timestamp": ny_time.isoformat()
+                        })
+
+                else:
+                    log_message(f"   💤 {symbol}: {reason if reason else 'Sin señal clara'}")
+
+                # Skip al siguiente símbolo (no aplicar lógica de acciones)
+                continue
+
+            # ========== LÓGICA PARA ACCIONES (NO CRIPTO) ==========
 
             # --- FIX: SOLICITUD EXPLÍCITA CON FECHA DE INICIO Y FEED IEX ---
             bars = api.get_bars(
@@ -648,17 +857,20 @@ def run_bot():
 
                 current_price = float(bars.iloc[-1]['close'])
 
-                # EJECUCIÓN REAL: Comprar 10 acciones (PRODUCCIÓN)
+                # EJECUCIÓN REAL: Compra dinámica basada en $1000 budget
                 try:
+                    qty, es_cripto, total_cost = calculate_dynamic_quantity(current_price, budget=1000, symbol=symbol)
+
                     log_message(f"\n   📈 EJECUTANDO ORDEN DE COMPRA:")
                     log_message(f"      Ticker: {symbol}")
-                    log_message(f"      Cantidad: 10 acciones")
+                    log_message(f"      Cantidad: {qty} acciones")
+                    log_message(f"      Costo total: ${total_cost:.2f}")
                     log_message(f"      Tipo: Market Order")
                     log_message(f"      Precio aproximado: ${current_price:.2f}")
 
                     order = api.submit_order(
                         symbol=symbol,
-                        qty=10,  # PRODUCCIÓN: 10 acciones
+                        qty=qty,  # DINÁMICO: Basado en budget de $1000
                         side='buy',
                         type='market',
                         time_in_force='day'
@@ -738,32 +950,43 @@ if __name__ == "__main__":
     log_message("📡 Modo: Always-On Worker")
     log_message("⏰ Análisis cada 60s durante market hours")
     log_message("💤 Análisis cada 15min fuera de horario")
-    log_message("💰 Gestión de capital: $1000 por operación")
+    log_message("💰 Gestión de capital: $1000 acciones / $100 cripto")
+    log_message("🌙 Cripto: Opera 24/7 (BTC/USD, ETH/USD)")
     log_message("=" * 60)
-    
+
     import time
-    
+
     while True:
         try:
-            # Verificar si el mercado está abierto
-            market_is_open = is_market_open()
+            # Cargar watchlist para detectar cripto
+            from bot import load_watchlist
+            watchlist = load_watchlist()
+
+            # Verificar si el mercado está abierto (o si hay cripto en watchlist)
+            market_is_open = is_market_open(watchlist)
             ny_tz = pytz.timezone('America/New_York')
             current_time = datetime.now(ny_tz).strftime('%H:%M:%S ET')
-            
+
+            # Detectar si hay cripto en watchlist
+            has_crypto = any(is_crypto_symbol(s) for s in watchlist)
+
             if market_is_open:
-                log_message(f"\n🟢 Mercado ABIERTO - {current_time}")
+                if has_crypto:
+                    log_message(f"\n🌙 CRIPTO DETECTADO - Operando 24/7 - {current_time}")
+                else:
+                    log_message(f"\n🟢 Mercado ABIERTO - {current_time}")
                 log_message("   Ejecutando análisis...")
                 run_bot()
-                
+
                 # Dormir 60 segundos
                 log_message("   ⏱️ Próximo análisis en 60 segundos...")
                 time.sleep(60)
-                
+
             else:
                 log_message(f"\n🔴 Mercado CERRADO - {current_time}")
                 log_message("   💤 Modo ahorro de recursos activado")
                 log_message("   ⏱️ Próxima verificación en 15 minutos...")
-                
+
                 # Dormir 15 minutos (900 segundos)
                 time.sleep(900)
         
