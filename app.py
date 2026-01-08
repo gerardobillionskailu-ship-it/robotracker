@@ -739,21 +739,70 @@ def render_bot_mission_panel():
     # Watchlist del bot
     st.markdown("### 📝 Watchlist del Bot")
 
+    # WATCHLISTS PRE-CARGADAS (Flexibles)
+    predefined_watchlists = {
+        "estrategia": "Según estrategia seleccionada",
+        "intervencion": "🇺🇸 Tesis Intervención",
+        "lowcost": "🔥 Low Cost (<$50)",
+        "techgrowth": "🤖 Tech & Growth",
+        "personalizada": "✏️ Personalizada (editar abajo)"
+    }
+    
+    watchlist_presets = {
+        "intervencion": ["HAL", "CVX", "SLB", "OXY", "XOM"],
+        "lowcost": ["PBR", "SOFI", "HAL", "INTC", "MARA", "RIVN", "KMI", "F", "VALE"],
+        "techgrowth": ["AAPL", "NVDA", "AMD", "MSFT", "GOOGL"]
+    }
+    
     default_tickers = strategies.get(bot_strategy, {}).get('default_tickers', [])
     current_watchlist = config.get('watchlist', default_tickers)
-
-    if st.button("📥 Cargar Tickers por Defecto", use_container_width=True):
-        st.session_state['bot_watchlist_text'] = ", ".join(default_tickers)
-        st.rerun()
-
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Callback para cargar watchlist automáticamente
+        def on_watchlist_select():
+            selected = st.session_state.get('watchlist_selector', 'estrategia')
+            if selected == 'estrategia':
+                tickers = strategies.get(bot_strategy, {}).get('default_tickers', [])
+            elif selected == 'personalizada':
+                return  # Dejar que el usuario edite manualmente
+            else:
+                tickers = watchlist_presets.get(selected, [])
+            
+            st.session_state['bot_watchlist_text'] = ", ".join(tickers)
+        
+        watchlist_choice = st.selectbox(
+            "🎯 Selecciona Lista de Tickers:",
+            options=list(predefined_watchlists.keys()),
+            format_func=lambda x: predefined_watchlists[x],
+            key="watchlist_selector",
+            on_change=on_watchlist_select,
+            help="Elige una lista pre-cargada o personaliza tu propia watchlist"
+        )
+    
+    with col2:
+        if st.button("📥 Cargar Tickers", use_container_width=True):
+            if watchlist_choice == 'estrategia':
+                tickers = strategies.get(bot_strategy, {}).get('default_tickers', [])
+            elif watchlist_choice == 'personalizada':
+                tickers = current_watchlist
+            else:
+                tickers = watchlist_presets.get(watchlist_choice, [])
+            
+            st.session_state['bot_watchlist_text'] = ", ".join(tickers)
+            st.rerun()
+    
+    # Inicializar watchlist text si no existe
     if 'bot_watchlist_text' not in st.session_state:
         st.session_state['bot_watchlist_text'] = ", ".join(current_watchlist)
 
+    # Text area editable
     watchlist_input = st.text_area(
         "Tickers que el Bot Monitoreará (separados por comas)",
         value=st.session_state['bot_watchlist_text'],
         height=100,
-        help="Ingresa los tickers separados por comas. Ej: NVDA, TSLA, AAPL"
+        help="Edita manualmente los tickers. Ej: NVDA, TSLA, AAPL"
     )
 
     st.markdown("---")
@@ -1309,12 +1358,35 @@ def main():
             st.warning("⚠️ Configura la watchlist de monitoreo para ver análisis")
             return
 
-        # Botón de refresh
-        col1, col2, col3 = st.columns([2, 1, 1])
+        # Auto-Refresh y Botón de actualización manual
+        col1, col2, col3 = st.columns([1, 1, 1])
+        
+        with col1:
+            auto_refresh = st.checkbox(
+                "🔄 Auto-Refresh (60s)",
+                value=False,
+                key="auto_refresh_toggle",
+                help="Actualiza los datos automáticamente cada 60 segundos"
+            )
+        
         with col2:
-            if st.button("🔄 Actualizar Datos", use_container_width=True):
+            if st.button("🔄 Actualizar Ahora", use_container_width=True):
                 st.cache_data.clear()
                 st.rerun()
+        
+        with col3:
+            if auto_refresh:
+                st.caption("✅ Auto-refresh activo")
+                # Implementar auto-refresh con placeholder
+                import time
+                placeholder = st.empty()
+                with placeholder.container():
+                    st.info("⏱️ Próxima actualización en 60s...")
+                time.sleep(60)
+                st.cache_data.clear()
+                st.rerun()
+            else:
+                st.caption("⏸️ Manual")
 
         # Obtener datos de mercado USANDO MONITOR_WATCHLIST (no bot_watchlist)
         with st.spinner('Obteniendo datos de mercado y consultando a todos los jueces...'):

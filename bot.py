@@ -71,6 +71,46 @@ def save_to_trade_history(trade_record):
     except Exception as e:
         log_message(f"   ⚠️ Error guardando en trade_history.json: {e}")
 
+
+def is_market_open():
+    """
+    Verifica si el mercado de NY está abierto
+    Horario: 9:30 AM - 4:00 PM ET, Lunes a Viernes
+    """
+    ny_tz = pytz.timezone('America/New_York')
+    now = datetime.now(ny_tz)
+    
+    # Verificar si es fin de semana
+    if now.weekday() >= 5:  # 5 = Sábado, 6 = Domingo
+        return False
+    
+    # Verificar horario (9:30 AM - 4:00 PM)
+    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+    
+    return market_open <= now <= market_close
+
+def calculate_dynamic_quantity(price, budget=1000):
+    """
+    Calcula cantidad de acciones a comprar basada en presupuesto máximo
+    
+    Args:
+        price: Precio actual de la acción
+        budget: Presupuesto máximo por operación (default: $1000)
+    
+    Returns:
+        int: Cantidad de acciones a comprar
+    """
+    if price <= 0:
+        return 0
+    
+    qty = int(budget / price)
+    
+    # Mínimo 1 acción, máximo 100
+    qty = max(1, min(qty, 100))
+    
+    return qty
+
 # ========== FUNCIONES DE CONFIGURACIÓN ==========
 
 def load_config():
@@ -638,7 +678,7 @@ def run_bot():
                         "price": current_price,
                         "order_id": order.id,
                         "order_status": order.status,
-                        "quantity": 10,
+                        "quantity": qty,
                         "timestamp": ny_time.isoformat(),
                         "strategy": active_strategy
                     })
@@ -650,7 +690,7 @@ def run_bot():
                         "ticker": symbol,
                         "action": "BUY",
                         "strategy": strategy_label,
-                        "quantity": 10,
+                        "quantity": qty,
                         "price": current_price,
                         "order_id": order.id,
                         "signal": signal
@@ -692,4 +732,48 @@ def run_bot():
     log_message("=" * 60 + "\n")
 
 if __name__ == "__main__":
-    run_bot()
+    log_message("=" * 60)
+    log_message("🚀 TRADEOLYMPO v6.0 - WORKER CONTINUO (RAILWAY ALWAYS-ON)")
+    log_message("=" * 60)
+    log_message("📡 Modo: Always-On Worker")
+    log_message("⏰ Análisis cada 60s durante market hours")
+    log_message("💤 Análisis cada 15min fuera de horario")
+    log_message("💰 Gestión de capital: $1000 por operación")
+    log_message("=" * 60)
+    
+    import time
+    
+    while True:
+        try:
+            # Verificar si el mercado está abierto
+            market_is_open = is_market_open()
+            ny_tz = pytz.timezone('America/New_York')
+            current_time = datetime.now(ny_tz).strftime('%H:%M:%S ET')
+            
+            if market_is_open:
+                log_message(f"\n🟢 Mercado ABIERTO - {current_time}")
+                log_message("   Ejecutando análisis...")
+                run_bot()
+                
+                # Dormir 60 segundos
+                log_message("   ⏱️ Próximo análisis en 60 segundos...")
+                time.sleep(60)
+                
+            else:
+                log_message(f"\n🔴 Mercado CERRADO - {current_time}")
+                log_message("   💤 Modo ahorro de recursos activado")
+                log_message("   ⏱️ Próxima verificación en 15 minutos...")
+                
+                # Dormir 15 minutos (900 segundos)
+                time.sleep(900)
+        
+        except KeyboardInterrupt:
+            log_message("\n\n⚠️ WORKER DETENIDO POR USUARIO")
+            break
+        
+        except Exception as e:
+            log_message(f"\n❌ ERROR EN WORKER: {e}")
+            log_message("   ⏱️ Reintentando en 5 minutos...")
+            import traceback
+            traceback.print_exc()
+            time.sleep(300)  # 5 minutos antes de reintentar
