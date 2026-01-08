@@ -950,65 +950,8 @@ def render_trading_table_panoramic(df_signals):
 
     display_df = pd.DataFrame(display_data)
 
-    # MASTER: Selector de Ticker + Tabla estática (compatible con Streamlit antiguo)
+    # TABLA PANORÁMICA (primero, para vista completa)
     st.markdown("---")
-    
-    # Preparar lista de tickers con indicador visual de señales
-    ticker_options = []
-    for idx, row in display_df.iterrows():
-        ticker = row['Ticker']
-        # Verificar si tiene alguna señal CALL
-        has_call = any('🟢' in str(row[col]) for col in ['🌊 Rompeolas', '🏆 Élite', '📈 Larry', '📊 Wyckoff'])
-        if has_call:
-            ticker_options.append(f"🟢 {ticker}")
-        else:
-            ticker_options.append(f"⚪ {ticker}")
-    
-    # Selectbox para selección de ticker
-    col_select, col_hint = st.columns([1, 2])
-    
-    with col_select:
-        # Callback para actualizar session_state cuando cambia selección
-        def on_ticker_select():
-            selected = st.session_state.get('ticker_selector_key', '')
-            if selected:
-                # Extraer ticker sin el icono
-                ticker = selected.split(' ')[1] if ' ' in selected else selected
-                st.session_state['selected_ticker_visual'] = ticker
-        
-        # Inicializar índice si no existe
-        if 'selected_ticker_visual' not in st.session_state and ticker_options:
-            # Por defecto seleccionar el primer ticker con señal CALL, o el primero
-            default_ticker = ticker_options[0]
-            st.session_state['selected_ticker_visual'] = default_ticker.split(' ')[1] if ' ' in default_ticker else default_ticker
-        
-        # Determinar índice inicial del selectbox
-        current_ticker = st.session_state.get('selected_ticker_visual', '')
-        default_index = 0
-        for i, opt in enumerate(ticker_options):
-            if current_ticker in opt:
-                default_index = i
-                break
-        
-        selected_ticker_display = st.selectbox(
-            "🎯 Selecciona ticker para análisis detallado",
-            options=ticker_options,
-            index=default_index,
-            key="ticker_selector_key",
-            on_change=on_ticker_select,
-            help="Tickers con 🟢 tienen señales activas de CALL. Cambia la selección para ver detalles diferentes."
-        )
-        
-        # Extraer ticker limpio (sin icono)
-        selected_ticker = selected_ticker_display.split(' ')[1] if ' ' in selected_ticker_display else selected_ticker_display
-        st.session_state['selected_ticker_visual'] = selected_ticker
-    
-    with col_hint:
-        st.info("💡 **Interactivo:** Cambia el ticker en el selector para ver detalles del contrato sugerido abajo")
-    
-    st.markdown("---")
-    
-    # Tabla estática (SIN on_select - compatible con todas las versiones de Streamlit)
     st.dataframe(
         display_df,
         use_container_width=True,
@@ -1035,6 +978,78 @@ def render_trading_table_panoramic(df_signals):
     with col4:
         calls_wyckoff = sum('🟢' in str(row['📊 Wyckoff']) for _, row in display_df.iterrows())
         st.metric("📊 Wyckoff CALL", calls_wyckoff)
+
+    # SELECTOR DE TICKER PARA ANÁLISIS DETALLADO (destacado)
+    st.markdown("---")
+    st.markdown("### 🔍 Análisis Detallado de Contrato")
+    
+    # Preparar opciones con indicadores visuales
+    ticker_options = []
+    ticker_map = {}  # Mapeo de display -> ticker real
+    
+    for idx, row in display_df.iterrows():
+        ticker = row['Ticker']
+        # Verificar señales activas
+        signals = []
+        if '🟢' in str(row['🌊 Rompeolas']):
+            signals.append('Rompeolas')
+        if '🟢' in str(row['🏆 Élite']):
+            signals.append('Élite')
+        if '🟢' in str(row['📈 Larry']):
+            signals.append('Larry')
+        if '🟢' in str(row['📊 Wyckoff']):
+            signals.append('Wyckoff')
+        
+        if signals:
+            display_text = f"🟢 {ticker} ({', '.join(signals)})"
+            ticker_options.append(display_text)
+            ticker_map[display_text] = ticker
+        else:
+            display_text = f"⚪ {ticker} (Sin señales)"
+            ticker_options.append(display_text)
+            ticker_map[display_text] = ticker
+    
+    # Determinar valor inicial
+    if 'selected_ticker_visual' not in st.session_state and ticker_options:
+        # Seleccionar primer ticker con señal CALL
+        for opt in ticker_options:
+            if '🟢' in opt:
+                st.session_state['selected_ticker_visual'] = ticker_map[opt]
+                break
+        else:
+            # Si no hay señales, seleccionar primero
+            st.session_state['selected_ticker_visual'] = ticker_map[ticker_options[0]]
+    
+    # Encontrar índice del ticker actualmente seleccionado
+    current_ticker = st.session_state.get('selected_ticker_visual', '')
+    default_index = 0
+    for i, opt in enumerate(ticker_options):
+        if ticker_map[opt] == current_ticker:
+            default_index = i
+            break
+    
+    # SELECTBOX PROMINENTE
+    col_select, col_button = st.columns([3, 1])
+    
+    with col_select:
+        selected_display = st.selectbox(
+            "Selecciona el ticker que quieres analizar en detalle:",
+            options=ticker_options,
+            index=default_index,
+            key="ticker_detail_selector",
+            label_visibility="collapsed"
+        )
+        
+        # Actualizar ticker seleccionado
+        selected_ticker = ticker_map[selected_display]
+        st.session_state['selected_ticker_visual'] = selected_ticker
+    
+    with col_button:
+        st.markdown("<br>", unsafe_allow_html=True)  # Espacio vertical
+        if st.button("🔄 Refrescar", use_container_width=True):
+            st.rerun()
+    
+    st.info(f"📊 Analizando: **{selected_ticker}** | Cambia el selector arriba para ver otro ticker")
 
     # DETAIL: Tarjeta de oportunidad (solo si hay selección con señal CALL)
     if selected_ticker:
