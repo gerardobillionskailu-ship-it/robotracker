@@ -950,14 +950,43 @@ def render_trading_table_panoramic(df_signals):
 
     display_df = pd.DataFrame(display_data)
 
-    # MASTER: Tabla interactiva con selección
-    event = st.dataframe(
+    # MASTER: Selector de Ticker para análisis detallado
+    st.markdown("---")
+    col_select, col_info = st.columns([1, 2])
+    
+    with col_select:
+        # Lista de tickers con señales CALL (destacados)
+        tickers_with_calls = []
+        all_tickers = []
+        
+        for idx, row in display_df.iterrows():
+            ticker = row['Ticker']
+            all_tickers.append(ticker)
+            # Verificar si tiene alguna señal CALL
+            if any('🟢' in str(row[col]) for col in ['🌊 Rompeolas', '🏆 Élite', '📈 Larry', '📊 Wyckoff']):
+                tickers_with_calls.append(f"🟢 {ticker}")
+            else:
+                tickers_with_calls.append(f"⚪ {ticker}")
+        
+        selected_ticker_display = st.selectbox(
+            "🎯 Selecciona ticker para análisis detallado",
+            options=tickers_with_calls,
+            help="Tickers con 🟢 tienen señales activas de CALL"
+        )
+        
+        # Extraer ticker sin el icono
+        selected_ticker = selected_ticker_display.split(' ')[1]
+    
+    with col_info:
+        st.info("💡 Selecciona un ticker con 🟢 para ver detalles del contrato sugerido")
+    
+    st.markdown("---")
+
+    # Tabla estática (sin selección interactiva - compatible con Streamlit antiguo)
+    st.dataframe(
         display_df,
         use_container_width=True,
-        height=500,
-        on_select="rerun",
-        selection_mode="single-row",
-        key="radar_table"
+        height=500
     )
 
     # Resumen rápido (siempre visible)
@@ -981,11 +1010,8 @@ def render_trading_table_panoramic(df_signals):
         calls_wyckoff = sum('🟢' in str(row['📊 Wyckoff']) for _, row in display_df.iterrows())
         st.metric("📊 Wyckoff CALL", calls_wyckoff)
 
-    # DETAIL: Tarjeta de oportunidad (solo si hay selección)
-    if event.selection.rows:
-        selected_row_idx = event.selection.rows[0]
-        selected_ticker = display_df.iloc[selected_row_idx]['Ticker']
-        
+    # DETAIL: Tarjeta de oportunidad (solo si hay selección con señal CALL)
+    if selected_ticker:
         # Obtener datos originales del ticker seleccionado
         ticker_data = df_signals[df_signals['symbol'] == selected_ticker].iloc[0]
         
