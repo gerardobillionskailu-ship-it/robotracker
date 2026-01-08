@@ -1141,61 +1141,6 @@ def render_trading_table_panoramic(df_signals):
 Esta es una señal automatizada basada en análisis técnico. No constituye asesoría financiera. 
 Opera bajo tu propio riesgo y considera tu tolerancia al riesgo.
                 """)
-            
-            # WIDGET DE TRADINGVIEW - Gráfico avanzado
-            st.markdown("---")
-            st.markdown("### 📈 Gráfico Avanzado - TradingView")
-            
-            # Determinar exchange según ticker
-            exchange = "NASDAQ"  # Por defecto
-            if selected_ticker in ['XLE', 'OXY', 'CVX', 'COP', 'SLB', 'HAL', 'VLO', 'XOM', 'MPC', 'SPY', 'QQQ']:
-                if selected_ticker in ['SPY', 'QQQ', 'XLE']:
-                    exchange = "AMEX"
-                else:
-                    exchange = "NYSE"
-            
-            symbol_with_exchange = f"{exchange}:{selected_ticker}"
-            
-            # Widget de TradingView con tema dark
-            tradingview_widget = f"""
-            <!-- TradingView Widget BEGIN -->
-            <div class="tradingview-widget-container" style="height:600px;">
-              <div id="tradingview_chart" style="height:100%;"></div>
-              <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-              <script type="text/javascript">
-              new TradingView.widget({{
-                "width": "100%",
-                "height": 600,
-                "symbol": "{symbol_with_exchange}",
-                "interval": "D",
-                "timezone": "America/New_York",
-                "theme": "dark",
-                "style": "1",
-                "locale": "es",
-                "toolbar_bg": "#1E222D",
-                "enable_publishing": false,
-                "hide_side_toolbar": false,
-                "allow_symbol_change": true,
-                "details": true,
-                "hotlist": true,
-                "calendar": false,
-                "studies": [
-                  "STD;SMA",
-                  "STD;RSI"
-                ],
-                "container_id": "tradingview_chart",
-                "hide_top_toolbar": false,
-                "save_image": false
-              }});
-              </script>
-            </div>
-            <!-- TradingView Widget END -->
-            """
-            
-            st.components.v1.html(tradingview_widget, height=620)
-            
-            st.caption(f"💡 **Símbolo:** {symbol_with_exchange} | Intervalo: Diario | Timezone: NY (ET)")
-            st.caption("🔮 **Próximamente:** Gráficos personalizados con tus propios dibujos y anotaciones")
         
         else:
             # Ticker seleccionado pero sin señal CALL
@@ -1205,6 +1150,61 @@ Opera bajo tu propio riesgo y considera tu tolerancia al riesgo.
 Ninguno de los jueces ha emitido señal de CALL para este ticker en este momento.
 Monitorea los cambios de mercado para nuevas oportunidades.
             """)
+        
+        # WIDGET DE TRADINGVIEW - Gráfico avanzado (SE MUESTRA SIEMPRE)
+        st.markdown("---")
+        st.markdown("### 📈 Gráfico Avanzado - TradingView")
+        
+        # Determinar exchange según ticker
+        exchange = "NASDAQ"  # Por defecto
+        if selected_ticker in ['XLE', 'OXY', 'CVX', 'COP', 'SLB', 'HAL', 'VLO', 'XOM', 'MPC', 'SPY', 'QQQ']:
+            if selected_ticker in ['SPY', 'QQQ', 'XLE']:
+                exchange = "AMEX"
+            else:
+                exchange = "NYSE"
+        
+        symbol_with_exchange = f"{exchange}:{selected_ticker}"
+        
+        # Widget de TradingView con tema dark
+        tradingview_widget = f"""
+        <!-- TradingView Widget BEGIN -->
+        <div class="tradingview-widget-container" style="height:600px;">
+          <div id="tradingview_chart" style="height:100%;"></div>
+          <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+          <script type="text/javascript">
+          new TradingView.widget({{
+            "width": "100%",
+            "height": 600,
+            "symbol": "{symbol_with_exchange}",
+            "interval": "D",
+            "timezone": "America/New_York",
+            "theme": "dark",
+            "style": "1",
+            "locale": "es",
+            "toolbar_bg": "#1E222D",
+            "enable_publishing": false,
+            "hide_side_toolbar": false,
+            "allow_symbol_change": true,
+            "details": true,
+            "hotlist": true,
+            "calendar": false,
+            "studies": [
+              "STD;SMA",
+              "STD;RSI"
+            ],
+            "container_id": "tradingview_chart",
+            "hide_top_toolbar": false,
+            "save_image": false
+          }});
+          </script>
+        </div>
+        <!-- TradingView Widget END -->
+        """
+        
+        st.components.v1.html(tradingview_widget, height=620)
+        
+        st.caption(f"💡 **Símbolo:** {symbol_with_exchange} | Intervalo: Diario | Timezone: NY (ET)")
+        st.caption("🔮 **Próximamente:** Gráficos personalizados con tus propios dibujos y anotaciones")
 
 # ========== MAIN ==========
 
