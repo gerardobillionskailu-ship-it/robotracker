@@ -745,13 +745,15 @@ def render_bot_mission_panel():
         "intervencion": "🇺🇸 Tesis Intervención",
         "lowcost": "🔥 Low Cost (<$50)",
         "techgrowth": "🤖 Tech & Growth",
+        "crypto_test": "🌙 Modo Prueba Nocturna (Cripto)",
         "personalizada": "✏️ Personalizada (editar abajo)"
     }
-    
+
     watchlist_presets = {
         "intervencion": ["HAL", "CVX", "SLB", "OXY", "XOM"],
         "lowcost": ["PBR", "SOFI", "HAL", "INTC", "MARA", "RIVN", "KMI", "F", "VALE"],
-        "techgrowth": ["AAPL", "NVDA", "AMD", "MSFT", "GOOGL"]
+        "techgrowth": ["AAPL", "NVDA", "AMD", "MSFT", "GOOGL"],
+        "crypto_test": ["BTC/USD"]  # Modo prueba nocturna
     }
     
     default_tickers = strategies.get(bot_strategy, {}).get('default_tickers', [])
@@ -780,7 +782,21 @@ def render_bot_mission_panel():
             on_change=on_watchlist_select,
             help="Elige una lista pre-cargada o personaliza tu propia watchlist"
         )
-    
+
+        # Aviso informativo para modo cripto
+        if watchlist_choice == 'crypto_test':
+            st.info("""
+            🌙 **Modo Prueba Nocturna Activado**
+
+            - ✅ Opera **24/7** (sin esperar apertura NYSE)
+            - ⚡ Estrategia **Flash Test** (scalping BTC)
+            - 📊 RSI(14) < 40 en velas de 5 minutos → COMPRA
+            - 💰 Budget: **$100 USD** (prueba segura)
+            - 🎯 Take Profit: +0.5% | Stop Loss: -0.5%
+
+            Ideal para probar la lógica de compra/venta AHORA MISMO.
+            """)
+
     with col2:
         if st.button("📥 Cargar Tickers", use_container_width=True):
             if watchlist_choice == 'estrategia':
