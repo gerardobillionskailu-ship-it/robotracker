@@ -1,5 +1,5 @@
 {
-  "active_strategy": "rompeolas",
+  "active_strategy": "centinela",
   "watchlist": [
     "XLE",
     "OXY",
@@ -10,12 +10,12 @@
     "HAL",
     "VLO"
   ],
-  "last_updated": "2026-01-07T03:32:09.464264",
+  "last_updated": "2026-01-08T14:17:03.235931",
   "strategies": {
     "elite": {
-      "name": "Swing - Élite (Tech)",
+      "name": "Swing - \u00c9lite (Tech)",
       "type": "swing",
-      "description": "Reversión a la media en tech stocks con RSI < 30 + tendencia alcista",
+      "description": "Reversi\u00f3n a la media en tech stocks con RSI < 30 + tendencia alcista",
       "default_tickers": [
         "NVDA",
         "TSLA",
@@ -27,9 +27,9 @@
       ]
     },
     "rompeolas": {
-      "name": "Swing - Rompeolas (Energía)",
+      "name": "Swing - Rompeolas (Energ\u00eda)",
       "type": "swing",
-      "description": "Breakout de energía con RSI > 50 + volumen alto",
+      "description": "Breakout de energ\u00eda con RSI > 50 + volumen alto",
       "default_tickers": [
         "XLE",
         "OXY",
@@ -44,7 +44,7 @@
     "wheel": {
       "name": "Income - The Wheel (Opciones)",
       "type": "options",
-      "description": "Venta de primas con Cash-Secured Puts y Covered Calls. Generación de ingresos con theta decay.",
+      "description": "Venta de primas con Cash-Secured Puts y Covered Calls. Generaci\u00f3n de ingresos con theta decay.",
       "default_tickers": [
         "AAPL",
         "MSFT",
@@ -57,7 +57,7 @@
     "orb": {
       "name": "Day Trading - ORB (Acciones)",
       "type": "daytrading",
-      "description": "Opening Range Breakout. Operativa intradía aprovechando volatilidad de apertura.",
+      "description": "Opening Range Breakout. Operativa intrad\u00eda aprovechando volatilidad de apertura.",
       "default_tickers": [
         "SPY",
         "QQQ",
@@ -67,9 +67,9 @@
       ]
     },
     "centinela": {
-      "name": "🛡️ Modo Centinela (Vigilancia Total)",
+      "name": "\ud83d\udee1\ufe0f Modo Centinela (Vigilancia Total)",
       "type": "multi",
-      "description": "Ejecuta Élite + Rompeolas simultáneamente. Si alguna estrategia da señal de CALL, dispara la compra. Registra qué estrategia activó el trigger.",
+      "description": "Ejecuta \u00c9lite + Rompeolas simult\u00e1neamente. Si alguna estrategia da se\u00f1al de CALL, dispara la compra. Registra qu\u00e9 estrategia activ\u00f3 el trigger.",
       "default_tickers": [
         "NVDA",
         "TSLA",
@@ -88,7 +88,7 @@
   },
   "strategic_sectors": {
     "venezuela_recovery": {
-      "name": "🛢️ Venezuela Recovery & Oil Services",
+      "name": "\ud83d\udee2\ufe0f Venezuela Recovery & Oil Services",
       "tickers": [
         "CVX",
         "SLB",
@@ -101,10 +101,10 @@
         "OXY",
         "PBR"
       ],
-      "description": "Empresas con exposición a la reactivación petrolera venezolana"
+      "description": "Empresas con exposici\u00f3n a la reactivaci\u00f3n petrolera venezolana"
     },
     "big_tech": {
-      "name": "💻 Big Tech & AI",
+      "name": "\ud83d\udcbb Big Tech & AI",
       "tickers": [
         "NVDA",
         "MSFT",
@@ -115,10 +115,10 @@
         "TSM",
         "AVGO"
       ],
-      "description": "Gigantes tecnológicos y líderes en IA"
+      "description": "Gigantes tecnol\u00f3gicos y l\u00edderes en IA"
     },
     "crypto_proxies": {
-      "name": "₿ Crypto Proxies",
+      "name": "\u20bf Crypto Proxies",
       "tickers": [
         "COIN",
         "MSTR",
@@ -130,7 +130,7 @@
       "description": "Proxies de criptomonedas en mercados tradicionales"
     },
     "defense_aero": {
-      "name": "🛡️ Defensa & Aero",
+      "name": "\ud83d\udee1\ufe0f Defensa & Aero",
       "tickers": [
         "LMT",
         "RTX",
