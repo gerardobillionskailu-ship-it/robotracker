@@ -1,16 +1,17 @@
 {
   "active_strategy": "centinela",
   "watchlist": [
-    "XLE",
-    "OXY",
-    "APA",
-    "CVX",
-    "COP",
-    "SLB",
+    "PBR",
+    "SOFI",
     "HAL",
-    "VLO"
+    "INTC",
+    "MARA",
+    "RIVN",
+    "KMI",
+    "F",
+    "VALE"
   ],
-  "last_updated": "2026-01-08T20:27:16.733840",
+  "last_updated": "2026-01-08T23:32:33.068598",
   "strategies": {
     "elite": {
       "name": "Swing - \u00c9lite (Tech)",
