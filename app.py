@@ -21,7 +21,7 @@ st.set_page_config(
     page_title="TradeOlympo | Trading Terminal",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"  # Zen Mode: Sidebar oculto por defecto
 )
 
 # ========== ESTILOS DARK MODE PROFESIONAL ==========
@@ -790,7 +790,7 @@ def render_bot_mission_panel():
                         st.warning(f"{message}\n\n⚠️ Guardado localmente, pero no sincronizado con GitHub.")
                 else:
                     st.success("✅ Misión guardada localmente")
-                    st.info("💡 Configura GITHUB_TOKEN y GITHUB_REPO en secrets para sincronización automática")
+                    st.caption("💡 Tip: Configura GITHUB_TOKEN y GITHUB_REPO en secrets para sincronización automática")
 
                 st.session_state['bot_watchlist_text'] = ", ".join(new_watchlist)
 
@@ -871,7 +871,7 @@ def render_independent_monitoring_radar():
         st.warning("⚠️ La watchlist de monitoreo está vacía. Agrega al menos un ticker.")
         return view_strategy, []
 
-    st.success(f"✅ Analizando {len(monitor_watchlist)} símbolos: {', '.join(monitor_watchlist)}")
+    # Mensaje de análisis removido para Zen Mode - info visible en tabla
 
     return monitor_watchlist  # Ya no necesitamos view_strategy
 
@@ -921,7 +921,6 @@ def calculate_contract_details(ticker, price, winning_strategy):
 def render_trading_table_panoramic(df_signals):
     """Tabla Panorámica con patrón Master-Detail: Tabla limpia + Detalles al seleccionar"""
     st.markdown("### 📊 Radar Panorámico - Vista de Todos los Jueces")
-    st.info("💡 **Interactivo:** Haz clic en cualquier fila para ver detalles del contrato sugerido")
 
     # Función helper para iconos
     def signal_to_icon(signal):
@@ -1049,7 +1048,7 @@ def render_trading_table_panoramic(df_signals):
         if st.button("🔄 Refrescar", use_container_width=True):
             st.rerun()
     
-    st.info(f"📊 Analizando: **{selected_ticker}** | Cambia el selector arriba para ver otro ticker")
+    st.caption(f"📊 Analizando: **{selected_ticker}** | Usa el selector arriba para cambiar de ticker")
 
     # DETAIL: Tarjeta de oportunidad (solo si hay selección con señal CALL)
     if selected_ticker:
@@ -1136,11 +1135,67 @@ def render_trading_table_panoramic(df_signals):
                 if st.button("📋 Copiar Contrato", use_container_width=True):
                     st.info(f"✅ Copiado: {contract_code}")
             
-            # Advertencia de riesgo
-            st.warning("""
-⚠️ **Disclaimer:** Esta es una señal automatizada basada en análisis técnico. 
-No constituye asesoría financiera. Opera bajo tu propio riesgo y considera tu tolerancia al riesgo.
-            """)
+            # Advertencia de riesgo (más compacta para Zen Mode)
+            with st.expander("⚠️ Disclaimer de Riesgo", expanded=False):
+                st.caption("""
+Esta es una señal automatizada basada en análisis técnico. No constituye asesoría financiera. 
+Opera bajo tu propio riesgo y considera tu tolerancia al riesgo.
+                """)
+            
+            # WIDGET DE TRADINGVIEW - Gráfico avanzado
+            st.markdown("---")
+            st.markdown("### 📈 Gráfico Avanzado - TradingView")
+            
+            # Determinar exchange según ticker
+            exchange = "NASDAQ"  # Por defecto
+            if selected_ticker in ['XLE', 'OXY', 'CVX', 'COP', 'SLB', 'HAL', 'VLO', 'XOM', 'MPC', 'SPY', 'QQQ']:
+                if selected_ticker in ['SPY', 'QQQ', 'XLE']:
+                    exchange = "AMEX"
+                else:
+                    exchange = "NYSE"
+            
+            symbol_with_exchange = f"{exchange}:{selected_ticker}"
+            
+            # Widget de TradingView con tema dark
+            tradingview_widget = f"""
+            <!-- TradingView Widget BEGIN -->
+            <div class="tradingview-widget-container" style="height:600px;">
+              <div id="tradingview_chart" style="height:100%;"></div>
+              <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+              <script type="text/javascript">
+              new TradingView.widget({{
+                "width": "100%",
+                "height": 600,
+                "symbol": "{symbol_with_exchange}",
+                "interval": "D",
+                "timezone": "America/New_York",
+                "theme": "dark",
+                "style": "1",
+                "locale": "es",
+                "toolbar_bg": "#1E222D",
+                "enable_publishing": false,
+                "hide_side_toolbar": false,
+                "allow_symbol_change": true,
+                "details": true,
+                "hotlist": true,
+                "calendar": false,
+                "studies": [
+                  "STD;SMA",
+                  "STD;RSI"
+                ],
+                "container_id": "tradingview_chart",
+                "hide_top_toolbar": false,
+                "save_image": false
+              }});
+              </script>
+            </div>
+            <!-- TradingView Widget END -->
+            """
+            
+            st.components.v1.html(tradingview_widget, height=620)
+            
+            st.caption(f"💡 **Símbolo:** {symbol_with_exchange} | Intervalo: Diario | Timezone: NY (ET)")
+            st.caption("🔮 **Próximamente:** Gráficos personalizados con tus propios dibujos y anotaciones")
         
         else:
             # Ticker seleccionado pero sin señal CALL
@@ -1222,7 +1277,7 @@ def main():
 
     with tab1:
         # PANEL 1: Panel de Control del Bot (Misión)
-        with st.expander("🤖 PANEL DE CONTROL DEL BOT (MISIÓN)", expanded=True):
+        with st.expander("🤖 PANEL DE CONTROL DEL BOT (MISIÓN)", expanded=False):
             bot_strategy, bot_watchlist = render_bot_mission_panel()
 
         st.markdown("---")
