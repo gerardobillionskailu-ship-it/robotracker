@@ -23,7 +23,9 @@ import pytz
 
 API_KEY = os.environ.get('ALPACA_API_KEY')
 SECRET_KEY = os.environ.get('ALPACA_SECRET_KEY')
-ENDPOINT = os.environ.get('ALPACA_ENDPOINT')
+
+# 🔒 MODO FORZADO: PAPER TRADING (Hardcoded para bypass variables de entorno)
+ENDPOINT = "https://paper-api.alpaca.markets"
 
 # Watchlist por defecto
 DEFAULT_WATCHLIST = ["NVDA", "TSLA", "AAPL", "AMD", "MSFT", "XLE", "OXY", "APA", "CVX"]
@@ -636,6 +638,13 @@ def run_bot():
 
     api = tradeapi.REST(API_KEY, SECRET_KEY, ENDPOINT, api_version='v2')
 
+    # ========== CONFIRMACIÓN DE MODO PAPER TRADING ==========
+    log_message("\n" + "=" * 60)
+    log_message("🔒 MODO FORZADO: PAPER TRADING ACTIVO")
+    log_message(f"📡 Endpoint: {ENDPOINT}")
+    log_message(f"🔑 API Key: {API_KEY[:8]}...{API_KEY[-4:] if API_KEY else 'N/A'}")
+    log_message("=" * 60 + "\n")
+
     # Calcular fecha de inicio (Hace 700 días para asegurar datos de sobra)
     fecha_inicio = (datetime.now() - timedelta(days=700)).strftime('%Y-%m-%d')
     log_message(f"📅 Solicitando datos desde: {fecha_inicio}")
@@ -946,6 +955,9 @@ def run_bot():
 if __name__ == "__main__":
     log_message("=" * 60)
     log_message("🚀 TRADEOLYMPO v6.0 - WORKER CONTINUO (RAILWAY ALWAYS-ON)")
+    log_message("=" * 60)
+    log_message("🔒 MODO FORZADO: PAPER TRADING ACTIVO")
+    log_message(f"📡 Endpoint: {ENDPOINT}")
     log_message("=" * 60)
     log_message("📡 Modo: Always-On Worker")
     log_message("⏰ Análisis cada 60s durante market hours")
