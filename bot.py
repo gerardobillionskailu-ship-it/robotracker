@@ -341,6 +341,110 @@ def get_telegram_updates():
         log_message(f"   ⚠️ Error obteniendo updates de Telegram: {e}")
         return []
 
+# ========== FUNCIONES AUXILIARES PARA REPORTES ==========
+
+def calculate_atm_strikes(price):
+    """
+    Calcula strikes ATM (At The Money) redondeados
+
+    Args:
+        price: Precio actual de la acción
+
+    Returns:
+        dict: {"call_strike": float, "put_strike": float}
+    """
+    # Redondeo inteligente según rango de precio
+    if price < 25:
+        # Precios bajos: redondear a $1
+        strike = round(price)
+    elif price < 100:
+        # Precios medios: redondear a $2.50
+        strike = round(price / 2.5) * 2.5
+    elif price < 200:
+        # Precios altos: redondear a $5
+        strike = round(price / 5) * 5
+    else:
+        # Precios muy altos: redondear a $10
+        strike = round(price / 10) * 10
+
+    return {
+        "call_strike": strike,
+        "put_strike": strike
+    }
+
+def get_next_friday():
+    """
+    Obtiene la fecha del próximo viernes (expiración de opciones semanales)
+
+    Returns:
+        str: Fecha en formato "YYYY-MM-DD" (próximo viernes)
+    """
+    ny_tz = pytz.timezone('America/New_York')
+    today = datetime.now(ny_tz).date()
+
+    # Calcular días hasta el próximo viernes (4 = viernes)
+    days_until_friday = (4 - today.weekday()) % 7
+
+    # Si hoy es viernes, tomar el próximo (7 días)
+    if days_until_friday == 0:
+        days_until_friday = 7
+
+    next_friday = today + timedelta(days=days_until_friday)
+    return next_friday.strftime('%Y-%m-%d')
+
+def format_compact_ticker(symbol, price, rsi, sma_200=None):
+    """
+    Formato compacto para tickers neutrales (una línea)
+
+    Args:
+        symbol: Ticker
+        price: Precio actual
+        rsi: RSI actual
+        sma_200: SMA de 200 días (opcional)
+
+    Returns:
+        str: Línea formateada compacta
+    """
+    if sma_200:
+        return f"⚪ <b>{symbol}</b>: ${price:.2f} (RSI: {rsi:.0f} | SMA200: ${sma_200:.2f})"
+    else:
+        return f"⚪ <b>{symbol}</b>: ${price:.2f} (RSI: {rsi:.0f})"
+
+def format_expanded_opportunity(symbol, price, rsi, signal_type, strategy="N/A"):
+    """
+    Formato expandido para oportunidades de compra/venta
+
+    Args:
+        symbol: Ticker
+        price: Precio actual
+        rsi: RSI actual
+        signal_type: "BUY" o "SELL"
+        strategy: Nombre de estrategia que generó señal
+
+    Returns:
+        str: Bloque formateado expandido con strikes
+    """
+    emoji = "🟢" if signal_type == "BUY" else "🔴"
+    action = "COMPRA" if signal_type == "BUY" else "VENTA"
+
+    # Calcular strikes ATM
+    strikes = calculate_atm_strikes(price)
+    next_friday = get_next_friday()
+
+    # Formatear fecha legible
+    friday_obj = datetime.strptime(next_friday, '%Y-%m-%d')
+    friday_readable = friday_obj.strftime('%d/%m')
+
+    return (
+        f"\n{emoji} <b>{symbol}</b> - {action}\n"
+        f"  💰 Precio: <b>${price:.2f}</b>\n"
+        f"  📊 RSI: {rsi:.1f}\n"
+        f"  ⚡ Estrategia: {strategy}\n"
+        f"  📋 Opciones ATM:\n"
+        f"     • Call ${strikes['call_strike']:.2f} (exp {friday_readable})\n"
+        f"     • Put ${strikes['put_strike']:.2f} (exp {friday_readable})\n"
+    )
+
 def handle_radar_command():
     """
     Maneja el comando /radar: Muestra botones para seleccionar watchlist
@@ -374,14 +478,18 @@ def handle_radar_command():
 
 def handle_radar_analysis(api, watchlist_key):
     """
-    Ejecuta análisis técnico de una watchlist específica
+    Ejecuta análisis técnico de una watchlist específica con formato jerárquico
+
+    Agrupa resultados en:
+    - Neutrales (arriba, formato compacto)
+    - Oportunidades (abajo, formato expandido con strikes)
 
     Args:
         api: Instancia de tradeapi.REST
         watchlist_key: Clave de PRESET_WATCHLISTS ("energia", "tech", etc.)
 
     Returns:
-        str: Mensaje formateado con resultados
+        str: Mensaje formateado con resultados jerárquicos
     """
     try:
         # Obtener watchlist según la clave
@@ -399,11 +507,9 @@ def handle_radar_analysis(api, watchlist_key):
         ny_tz = pytz.timezone('America/New_York')
         current_time = datetime.now(ny_tz).strftime('%H:%M:%S ET')
 
-        radar_lines = [
-            f"🔭 <b>ANÁLISIS: {watchlist_name}</b>\n",
-            f"🕐 {current_time}\n",
-            f"📊 Analizando {len(watchlist)} tickers...\n"
-        ]
+        # Listas separadas para agrupación jerárquica
+        neutrals = []
+        opportunities = []
 
         fecha_inicio = (datetime.now() - timedelta(days=700)).strftime('%Y-%m-%d')
 
@@ -427,10 +533,15 @@ def handle_radar_analysis(api, watchlist_key):
                         rsi = calcular_rsi(closes, period=14).iloc[-1]
                         price = float(closes.iloc[-1])
 
-                        status = "🟢 COMPRA" if rsi < 40 else "⚪ NEUTRAL"
-                        radar_lines.append(
-                            f"\n<b>{symbol}</b>: ${price:.2f} | RSI: {rsi:.1f} {status}"
-                        )
+                        # Cripto: RSI < 40 es oportunidad
+                        if rsi < 40:
+                            opportunities.append(
+                                format_expanded_opportunity(symbol, price, rsi, "BUY", "Flash Test Cripto")
+                            )
+                        else:
+                            neutrals.append(
+                                format_compact_ticker(symbol, price, rsi)
+                            )
                 else:
                     # Acciones: usar velas diarias
                     bars = api.get_bars(
@@ -445,30 +556,56 @@ def handle_radar_analysis(api, watchlist_key):
                         closes = bars['close']
                         rsi = calcular_rsi(closes, period=14).iloc[-1]
                         sma_20 = calcular_sma(closes, 20).iloc[-1]
+                        sma_200 = calcular_sma(closes, 200).iloc[-1]
                         price = float(closes.iloc[-1])
 
-                        # Señal simplificada
+                        # Clasificar señal
                         if rsi < 30:
-                            status = "🟢 SOBREVENTA"
+                            # OPORTUNIDAD: Sobreventa
+                            opportunities.append(
+                                format_expanded_opportunity(symbol, price, rsi, "BUY", "Sobreventa (RSI<30)")
+                            )
                         elif rsi > 70:
-                            status = "🔴 SOBRECOMPRA"
-                        elif price > sma_20:
-                            status = "⚪ ALCISTA"
+                            # OPORTUNIDAD: Sobrecompra (posible venta)
+                            opportunities.append(
+                                format_expanded_opportunity(symbol, price, rsi, "SELL", "Sobrecompra (RSI>70)")
+                            )
                         else:
-                            status = "⚪ BAJISTA"
-
-                        radar_lines.append(
-                            f"\n<b>{symbol}</b>: ${price:.2f} | RSI: {rsi:.1f} {status}"
-                        )
+                            # NEUTRAL: Solo mostrar línea compacta
+                            neutrals.append(
+                                format_compact_ticker(symbol, price, rsi, sma_200)
+                            )
 
             except Exception as e:
-                radar_lines.append(f"\n<b>{symbol}</b>: ⚠️ Error")
+                neutrals.append(f"⚠️ <b>{symbol}</b>: Error obteniendo datos")
 
-        radar_lines.append(f"\n\n✅ Análisis completado")
-        return "".join(radar_lines)
+        # ========== CONSTRUIR REPORTE JERÁRQUICO ==========
+        report = [
+            f"🔭 <b>ANÁLISIS: {watchlist_name}</b>\n",
+            f"🕐 {current_time}\n"
+        ]
+
+        # 1. SECCIÓN NEUTRALES (Compacta)
+        if neutrals:
+            report.append(f"\n📊 <b>Neutrales ({len(neutrals)}):</b>\n")
+            for neutral in neutrals:
+                report.append(f"{neutral}\n")
+
+        # 2. SECCIÓN OPORTUNIDADES (Expandida)
+        if opportunities:
+            report.append(f"\n🎯 <b>OPORTUNIDADES ({len(opportunities)}):</b>\n")
+            for opportunity in opportunities:
+                report.append(opportunity)
+        else:
+            report.append(f"\n💤 Sin oportunidades detectadas\n")
+
+        report.append(f"\n✅ Análisis completado")
+        return "".join(report)
 
     except Exception as e:
         log_message(f"   ⚠️ Error en análisis radar: {e}")
+        import traceback
+        traceback.print_exc()
         return "❌ Error ejecutando análisis"
 
 def handle_status_command(api):
