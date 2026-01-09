@@ -36,6 +36,9 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 last_report_time = None
 tickers_scanned_count = 0
 
+# 💬 TELEGRAM COMMAND LISTENER (Tracking last update)
+last_update_id = None
+
 # 🔬 MODO FLASH TEST: Umbrales 20% más sensibles
 FLASH_TEST_MODE = True  # Cambiar a False para desactivar
 SENSITIVITY_MULTIPLIER = 0.8 if FLASH_TEST_MODE else 1.0  # 20% más sensible
@@ -193,6 +196,262 @@ def should_send_report():
         return True
 
     return False
+
+
+# ========== MÓDULO: TELEGRAM COMMAND LISTENER ==========
+
+def get_telegram_updates():
+    """
+    Obtiene actualizaciones de Telegram usando getUpdates API
+
+    Returns:
+        list: Lista de updates (mensajes) o [] si falla
+    """
+    global last_update_id
+
+    if not TELEGRAM_TOKEN:
+        return []
+
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
+        params = {
+            "timeout": 10,
+            "allowed_updates": ["message"]
+        }
+
+        # Si ya procesamos mensajes antes, pedir solo los nuevos
+        if last_update_id is not None:
+            params["offset"] = last_update_id + 1
+
+        response = requests.get(url, params=params, timeout=15)
+
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("ok"):
+                return data.get("result", [])
+
+        return []
+
+    except Exception as e:
+        log_message(f"   ⚠️ Error obteniendo updates de Telegram: {e}")
+        return []
+
+def handle_radar_command(api):
+    """
+    Maneja el comando /radar: Analiza watchlist y envía resumen técnico
+
+    Args:
+        api: Instancia de tradeapi.REST
+
+    Returns:
+        str: Mensaje formateado para Telegram
+    """
+    try:
+        # Cargar watchlist actual
+        config = load_user_config()
+        watchlist = config.get('watchlist', DEFAULT_WATCHLIST)[:10]  # Máximo 10 tickers
+
+        ny_tz = pytz.timezone('America/New_York')
+        current_time = datetime.now(ny_tz).strftime('%H:%M:%S ET')
+
+        radar_lines = [
+            f"🔭 <b>RADAR TÉCNICO</b>\n",
+            f"🕐 {current_time}\n",
+            f"📊 Analizando {len(watchlist)} tickers...\n"
+        ]
+
+        fecha_inicio = (datetime.now() - timedelta(days=700)).strftime('%Y-%m-%d')
+
+        for symbol in watchlist:
+            try:
+                # Detectar si es cripto
+                if is_crypto_symbol(symbol):
+                    # Cripto: usar velas de 5 minutos
+                    end_time = datetime.now()
+                    start_time = end_time - timedelta(hours=8)
+                    bars = api.get_bars(
+                        symbol,
+                        tradeapi.TimeFrame(5, tradeapi.TimeFrameUnit.Minute),
+                        start=start_time.isoformat(),
+                        end=end_time.isoformat(),
+                        feed='iex'
+                    ).df
+
+                    if not bars.empty and len(bars) >= 20:
+                        closes = bars['close']
+                        rsi = calcular_rsi(closes, period=14).iloc[-1]
+                        price = float(closes.iloc[-1])
+
+                        status = "🟢 COMPRA" if rsi < 40 else "⚪ NEUTRAL"
+                        radar_lines.append(
+                            f"\n<b>{symbol}</b>: ${price:.2f} | RSI: {rsi:.1f} {status}"
+                        )
+                else:
+                    # Acciones: usar velas diarias
+                    bars = api.get_bars(
+                        symbol,
+                        tradeapi.TimeFrame.Day,
+                        start=fecha_inicio,
+                        limit=300,
+                        feed='iex'
+                    ).df
+
+                    if not bars.empty and len(bars) >= 200:
+                        closes = bars['close']
+                        rsi = calcular_rsi(closes, period=14).iloc[-1]
+                        sma_20 = calcular_sma(closes, 20).iloc[-1]
+                        price = float(closes.iloc[-1])
+
+                        # Señal simplificada
+                        if rsi < 30:
+                            status = "🟢 SOBREVENTA"
+                        elif rsi > 70:
+                            status = "🔴 SOBRECOMPRA"
+                        elif price > sma_20:
+                            status = "⚪ ALCISTA"
+                        else:
+                            status = "⚪ BAJISTA"
+
+                        radar_lines.append(
+                            f"\n<b>{symbol}</b>: ${price:.2f} | RSI: {rsi:.1f} {status}"
+                        )
+
+            except Exception as e:
+                radar_lines.append(f"\n<b>{symbol}</b>: ⚠️ Error obteniendo datos")
+
+        radar_lines.append(f"\n\n✅ Análisis completado")
+        return "".join(radar_lines)
+
+    except Exception as e:
+        log_message(f"   ⚠️ Error en /radar: {e}")
+        return "❌ Error ejecutando /radar. Intenta de nuevo."
+
+def handle_status_command(api):
+    """
+    Maneja el comando /status: Balance, posiciones y estrategia activa
+
+    Args:
+        api: Instancia de tradeapi.REST
+
+    Returns:
+        str: Mensaje formateado para Telegram
+    """
+    try:
+        # Obtener datos de cuenta
+        account = api.get_account()
+        equity = float(account.equity)
+        cash = float(account.cash)
+        buying_power = float(account.buying_power)
+
+        # Obtener posiciones abiertas
+        positions = api.list_positions()
+
+        # Cargar estrategia activa
+        config = load_user_config()
+        active_strategy = config.get('active_strategy', 'centinela')
+        watchlist = config.get('watchlist', DEFAULT_WATCHLIST)
+
+        strategy_names = {
+            'centinela': '🛡️ Centinela',
+            'rompeolas': '🌊 Rompeolas',
+            'elite': '🏆 Élite',
+            'wheel': '🔄 The Wheel',
+            'orb': '⚡ ORB',
+            'flash_test': '⚡ Flash Test'
+        }
+
+        ny_tz = pytz.timezone('America/New_York')
+        current_time = datetime.now(ny_tz).strftime('%H:%M:%S ET')
+
+        status_msg = [
+            f"📊 <b>STATUS DE CUENTA</b>\n",
+            f"🕐 {current_time}\n",
+            f"\n💰 <b>Balance:</b>",
+            f"\n  • Equity: <b>${equity:,.2f}</b>",
+            f"\n  • Cash: ${cash:,.2f}",
+            f"\n  • Buying Power: ${buying_power:,.2f}\n",
+            f"\n📈 <b>Posiciones Abiertas:</b> {len(positions)}"
+        ]
+
+        if len(positions) > 0:
+            for pos in positions[:10]:  # Máximo 10 posiciones
+                qty = float(pos.qty)
+                current_price = float(pos.current_price)
+                cost_basis = float(pos.avg_entry_price)
+                market_value = float(pos.market_value)
+                unrealized_pl = float(pos.unrealized_pl)
+                unrealized_plpc = float(pos.unrealized_plpc) * 100
+
+                pl_emoji = "🟢" if unrealized_pl >= 0 else "🔴"
+
+                status_msg.append(
+                    f"\n  {pl_emoji} <b>{pos.symbol}</b>: {int(qty)} @ ${current_price:.2f} "
+                    f"({unrealized_plpc:+.1f}%)"
+                )
+        else:
+            status_msg.append("\n  • Sin posiciones abiertas")
+
+        status_msg.append(
+            f"\n\n⚡ <b>Estrategia Activa:</b> {strategy_names.get(active_strategy, active_strategy.upper())}"
+        )
+        status_msg.append(
+            f"\n📋 <b>Watchlist:</b> {', '.join(watchlist[:5])}"
+        )
+        status_msg.append(f"\n\n✅ Sistema operativo")
+
+        return "".join(status_msg)
+
+    except Exception as e:
+        log_message(f"   ⚠️ Error en /status: {e}")
+        import traceback
+        traceback.print_exc()
+        return "❌ Error ejecutando /status. Intenta de nuevo."
+
+def process_telegram_commands(api):
+    """
+    Procesa comandos entrantes de Telegram
+
+    Args:
+        api: Instancia de tradeapi.REST
+    """
+    global last_update_id
+
+    updates = get_telegram_updates()
+
+    for update in updates:
+        # Actualizar offset para no procesar el mismo mensaje dos veces
+        update_id = update.get("update_id")
+        if update_id:
+            last_update_id = update_id
+
+        # Extraer mensaje
+        message = update.get("message", {})
+        chat_id = message.get("chat", {}).get("id")
+        text = message.get("text", "")
+
+        # Verificar que el mensaje venga del chat correcto
+        if str(chat_id) != str(TELEGRAM_CHAT_ID):
+            continue
+
+        # Procesar comandos
+        if text.startswith("/radar"):
+            log_message(f"\n💬 Comando recibido: /radar")
+            response = handle_radar_command(api)
+            send_telegram_msg(response)
+
+        elif text.startswith("/status"):
+            log_message(f"\n💬 Comando recibido: /status")
+            response = handle_status_command(api)
+            send_telegram_msg(response)
+
+        elif text.startswith("/"):
+            # Comando desconocido
+            send_telegram_msg(
+                f"❓ Comando desconocido: {text}\n\n"
+                f"Comandos disponibles:\n"
+                f"  /radar - Análisis técnico\n"
+                f"  /status - Balance y posiciones"
+            )
 
 
 def is_crypto_symbol(symbol):
@@ -767,7 +1026,7 @@ def analizar_estrategia_flash_test(api, symbol):
 
 def run_bot():
     """Función principal del bot con arquitectura modular"""
-    config = load_config()
+    config = load_user_config()  # ✅ Usar user_config.json para misiones dinámicas
 
     log_message("=" * 60)
     log_message(f"🤖 INICIANDO TRADEOLYMPO v5.0 AUTO-BOT")
@@ -788,6 +1047,12 @@ def run_bot():
     log_message(f"📡 Endpoint: {ENDPOINT}")
     log_message(f"🔑 API Key: {API_KEY[:8]}...{API_KEY[-4:] if API_KEY else 'N/A'}")
     log_message("=" * 60 + "\n")
+
+    # 💬 PROCESAR COMANDOS DE TELEGRAM (Si hay mensajes pendientes)
+    try:
+        process_telegram_commands(api)
+    except Exception as cmd_error:
+        log_message(f"   ⚠️ Error procesando comandos: {cmd_error}")
 
     # Calcular fecha de inicio (Hace 700 días para asegurar datos de sobra)
     fecha_inicio = (datetime.now() - timedelta(days=700)).strftime('%Y-%m-%d')
@@ -928,11 +1193,7 @@ def run_bot():
 
                 else:
                     log_message(f"   💤 {symbol}: {reason if reason else 'Sin señal clara'}")
-
-                    # 📱 NOTIFICACIÓN DE NO COMPRA (Verbose Mode)
-                    if reason:
-                        no_signal_msg = f"🔍 <b>{symbol}</b>: {reason}"
-                        send_telegram_msg(no_signal_msg)
+                    # Modo silencioso: No enviar notificaciones de "Neutral"
 
                 # Skip al siguiente símbolo (no aplicar lógica de acciones)
                 continue
@@ -1143,16 +1404,10 @@ def run_bot():
 
             elif signal:
                 log_message(f"   💤 {symbol}: {signal}")
-                # 📱 NOTIFICACIÓN DE NO COMPRA (Verbose Mode)
-                if reason:
-                    no_signal_msg = f"🔍 <b>{symbol}</b>: {reason}"
-                    send_telegram_msg(no_signal_msg)
+                # Modo silencioso: No enviar notificaciones de "Watchlist"
             else:
                 log_message(f"   💤 Sin señal clara")
-                # 📱 NOTIFICACIÓN DE NO COMPRA (Verbose Mode)
-                if reason:
-                    no_signal_msg = f"🔍 <b>{symbol}</b>: {reason}"
-                    send_telegram_msg(no_signal_msg)
+                # Modo silencioso: No enviar notificaciones de "Neutral"
 
         except Exception as e:
             log_message(f"   ⚠️ Error procesando {symbol}: {e}")
@@ -1187,7 +1442,8 @@ if __name__ == "__main__":
     log_message("💰 Gestión de capital: $1000 acciones / $100 cripto")
     log_message("🌙 Cripto: Opera 24/7 (BTC/USD, ETH/USD)")
     log_message("📊 Reporte ejecutivo cada 90 minutos")
-    log_message("📱 Verbose Mode: Notifica TODAS las decisiones")
+    log_message("🤫 Silent Mode: Solo notifica señales y órdenes")
+    log_message("💬 Comandos: /radar, /status")
     log_message("=" * 60)
 
     # 📱 NOTIFICACIÓN DE INICIO (Telegram)
@@ -1200,7 +1456,10 @@ if __name__ == "__main__":
         f"⏰ Análisis cada 60s (market hours)\n"
         f"💤 Análisis cada 15min (fuera de horario)\n"
         f"📊 Reporte ejecutivo cada 90 minutos\n"
-        f"📱 Verbose Mode: Notifica todas las decisiones\n\n"
+        f"🤫 Silent Mode: Solo notifica señales y órdenes\n\n"
+        f"💬 <b>Comandos disponibles:</b>\n"
+        f"  /radar - Análisis técnico de watchlist\n"
+        f"  /status - Balance y posiciones\n\n"
         f"✅ Listo para detectar oportunidades"
     )
     send_telegram_msg(startup_msg)
