@@ -9,9 +9,11 @@
     "RIVN",
     "KMI",
     "F",
-    "VALE"
+    "VALE",
+    "QQQ",
+    "SPY"
   ],
-  "last_updated": "2026-01-09T14:42:29.057262",
+  "last_updated": "2026-01-09T17:12:11.227151",
   "strategies": {
     "elite": {
       "name": "Swing - \u00c9lite (Tech)",
