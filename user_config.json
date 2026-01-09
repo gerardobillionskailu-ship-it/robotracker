@@ -11,9 +11,15 @@
     "F",
     "VALE",
     "QQQ",
-    "SPY"
+    "SPY",
+    "AMZN",
+    "AMD",
+    "BABA",
+    "TSLA",
+    "AAPL",
+    "NFLX"
   ],
-  "last_updated": "2026-01-09T17:12:11.227151",
+  "last_updated": "2026-01-09T17:13:37.163514",
   "strategies": {
     "elite": {
       "name": "Swing - \u00c9lite (Tech)",
