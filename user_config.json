@@ -1,9 +1,17 @@
 {
-  "active_strategy": "centinela",
+  "active_strategy": "orb",
   "watchlist": [
-    "BTC/USD"
+    "PBR",
+    "SOFI",
+    "HAL",
+    "INTC",
+    "MARA",
+    "RIVN",
+    "KMI",
+    "F",
+    "VALE"
   ],
-  "last_updated": "2026-01-08T23:54:17.559688",
+  "last_updated": "2026-01-09T14:41:18.833712",
   "strategies": {
     "elite": {
       "name": "Swing - \u00c9lite (Tech)",
