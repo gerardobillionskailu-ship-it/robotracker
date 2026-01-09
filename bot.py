@@ -32,6 +32,14 @@ ENDPOINT = "https://paper-api.alpaca.markets"
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
+# ⏰ REPORTE EJECUTIVO (Tracking global)
+last_report_time = None
+tickers_scanned_count = 0
+
+# 🔬 MODO FLASH TEST: Umbrales 20% más sensibles
+FLASH_TEST_MODE = True  # Cambiar a False para desactivar
+SENSITIVITY_MULTIPLIER = 0.8 if FLASH_TEST_MODE else 1.0  # 20% más sensible
+
 # Watchlist por defecto
 DEFAULT_WATCHLIST = ["NVDA", "TSLA", "AAPL", "AMD", "MSFT", "XLE", "OXY", "APA", "CVX"]
 SECTOR_ENERGIA = ['XLE', 'OXY', 'APA', 'CVX', 'VLO', 'HAL', 'COP', 'SLB', 'BKR']
@@ -118,6 +126,73 @@ def send_telegram_msg(message):
     except Exception as e:
         log_message(f"   ⚠️ Telegram: Error inesperado: {e}")
         return False
+
+def get_account_equity(api):
+    """
+    Obtiene el equity actual de la cuenta de Alpaca
+
+    Args:
+        api: Instancia de tradeapi.REST
+
+    Returns:
+        float: Equity actual en USD, o 0 si falla
+    """
+    try:
+        account = api.get_account()
+        return float(account.equity)
+    except Exception as e:
+        log_message(f"   ⚠️ Error obteniendo equity: {e}")
+        return 0.0
+
+def send_executive_report(api, watchlist):
+    """
+    Envía reporte ejecutivo a Telegram con resumen de misión
+
+    Args:
+        api: Instancia de tradeapi.REST
+        watchlist: Lista de tickers analizados
+    """
+    global tickers_scanned_count
+
+    equity = get_account_equity(api)
+    ny_tz = pytz.timezone('America/New_York')
+    current_time = datetime.now(ny_tz).strftime('%H:%M:%S ET')
+
+    report_msg = (
+        f"📊 <b>REPORTE EJECUTIVO</b>\n\n"
+        f"🕐 Hora: {current_time}\n"
+        f"✅ Tickers escaneados (periodo): <b>{tickers_scanned_count}</b>\n"
+        f"💰 Equity actual: <b>${equity:,.2f}</b>\n"
+        f"📋 Watchlist activa: <code>{', '.join(watchlist[:5])}</code>\n"
+        f"🔬 Modo: <b>{'Flash Test (20% más sensible)' if FLASH_TEST_MODE else 'Normal'}</b>\n\n"
+        f"⏰ Próximo análisis en 60 segundos\n"
+        f"📈 Próximo reporte en 90 minutos"
+    )
+
+    send_telegram_msg(report_msg)
+
+    # Reset contador
+    tickers_scanned_count = 0
+
+def should_send_report():
+    """
+    Verifica si deben pasar 90 minutos desde el último reporte
+
+    Returns:
+        bool: True si debe enviar reporte, False otherwise
+    """
+    global last_report_time
+
+    if last_report_time is None:
+        last_report_time = datetime.now()
+        return True
+
+    elapsed = (datetime.now() - last_report_time).total_seconds() / 60  # minutos
+    if elapsed >= 90:
+        last_report_time = datetime.now()
+        return True
+
+    return False
 
 
 def is_crypto_symbol(symbol):
@@ -322,7 +397,7 @@ def analizar_estrategia_elite(bars, ticker):
     Ideal para: NVDA, TSLA, AAPL en días normales.
 
     Lógica:
-    - RSI < 30 (sobreventa extrema)
+    - RSI < 30 (sobreventa extrema) [🔬 Flash Test: < 36]
     - Precio > SMA 200 (tendencia alcista de fondo)
     """
     closes = bars['close']
@@ -338,21 +413,31 @@ def analizar_estrategia_elite(bars, ticker):
     sma_200_val = sma_200.iloc[-1]
     sma_20_val = sma_20.iloc[-1]
 
+    # 🔬 UMBRALES AJUSTADOS POR FLASH TEST (20% más sensible)
+    rsi_oversold_threshold = 30 * (1 / SENSITIVITY_MULTIPLIER)  # 36 si Flash Test activo
+    rsi_neutral_low = 40 * SENSITIVITY_MULTIPLIER  # 32 si Flash Test activo
+    rsi_neutral_high = 55 * (1 / SENSITIVITY_MULTIPLIER)  # 66 si Flash Test activo
+
     signal = None
     reason = ""
 
     # Lógica de Entrada
-    if pd.notna(rsi) and rsi < 30:
+    if pd.notna(rsi) and rsi < rsi_oversold_threshold:
         if current_price > sma_200_val:
             signal = "CALL (Rebote Técnico)"
-            reason = f"Elite: Activo sobrevendido (RSI {rsi:.2f}) en tendencia alcista. Posible rebote a la media."
+            mode_indicator = "🔬 Flash Test" if FLASH_TEST_MODE else ""
+            reason = f"Elite: Activo sobrevendido (RSI {rsi:.2f}) en tendencia alcista. Posible rebote a la media. {mode_indicator}"
         else:
             signal = "WATCHLIST (RSI Bajo en Downtrend)"
             reason = f"Elite: RSI {rsi:.2f} bajo pero precio < SMA200. Esperar confirmación."
 
-    elif pd.notna(rsi) and current_price > sma_20_val and 40 < rsi < 55:
+    elif pd.notna(rsi) and current_price > sma_20_val and rsi_neutral_low < rsi < rsi_neutral_high:
         signal = "WATCHLIST (Pullback Sano)"
         reason = f"Elite: Precio sobre SMA20, RSI {rsi:.2f} en zona neutral. Monitorear."
+    else:
+        # 📱 Razón de NO COMPRA
+        if pd.notna(rsi):
+            reason = f"Neutral (RSI: {rsi:.2f} / SMA20: ${sma_20_val:.2f})"
 
     return signal, reason
 
@@ -366,8 +451,8 @@ def analizar_estrategia_rompeolas(bars, ticker):
 
     Lógica:
     - Precio > Máximo de 20 días (breakout de resistencia)
-    - RSI > 50 (fuerza alcista, no rebote)
-    - Volumen > 150% del promedio (confirmación institucional)
+    - RSI > 50 (fuerza alcista, no rebote) [🔬 Flash Test: > 40]
+    - Volumen > 150% del promedio (confirmación institucional) [🔬 Flash Test: > 120%]
     """
     closes = bars['close']
     volumes = bars['volume']
@@ -385,6 +470,10 @@ def analizar_estrategia_rompeolas(bars, ticker):
     vol_sma_val = vol_sma.iloc[-1]
     resistencia = resistencia_20d.iloc[-1]
 
+    # 🔬 UMBRALES AJUSTADOS POR FLASH TEST (20% más sensible)
+    rsi_strength_threshold = 50 * SENSITIVITY_MULTIPLIER  # 40 si Flash Test activo
+    volume_multiplier = 1.5 * SENSITIVITY_MULTIPLIER  # 1.2 si Flash Test activo
+
     signal = None
     reason = ""
 
@@ -394,24 +483,29 @@ def analizar_estrategia_rompeolas(bars, ticker):
 
     # --- Lógica de Disparo (Trigger) ---
     breakout = current_price > resistencia
-    volumen_institucional = current_volume > (vol_sma_val * 1.5)
-    fuerza = rsi > 50
+    volumen_institucional = current_volume > (vol_sma_val * volume_multiplier)
+    fuerza = rsi > rsi_strength_threshold
 
     if breakout and fuerza:
         if volumen_institucional:
             signal = "CALL (ROMPEOLAS CONFIRMADO)"
             contrato = sugerir_contrato_opciones(current_price)
+            mode_indicator = "🔬 Flash Test" if FLASH_TEST_MODE else ""
 
             reason = (
                 f"🌊 BREAKOUT CON VOLUMEN EN {ticker}\n"
                 f"   - Precio: ${current_price:.2f} rompió resistencia de ${resistencia:.2f}\n"
-                f"   - Volumen: {int(current_volume):,} (>150% del promedio)\n"
-                f"   - RSI: {rsi:.2f} (Tendencia fuerte)"
+                f"   - Volumen: {int(current_volume):,} (>{int(volume_multiplier*100)}% del promedio)\n"
+                f"   - RSI: {rsi:.2f} (Tendencia fuerte) {mode_indicator}"
                 f"{contrato}"
             )
         else:
             signal = "WATCHLIST (Breakout sin Volumen)"
             reason = f"Rompeolas: Breakout de ${resistencia:.2f} pero volumen insuficiente. Monitorear."
+    else:
+        # 📱 Razón de NO COMPRA
+        if pd.notna(rsi):
+            reason = f"Neutral (RSI: {rsi:.2f} / Resistencia: ${resistencia:.2f})"
 
     return signal, reason
 
@@ -638,14 +732,18 @@ def analizar_estrategia_flash_test(api, symbol):
         take_profit_price = current_price * 1.005  # +0.5%
         stop_loss_price = current_price * 0.995    # -0.5%
 
+        # 🔬 UMBRALES AJUSTADOS POR FLASH TEST (20% más sensible)
+        rsi_crypto_threshold = 40 * (1 / SENSITIVITY_MULTIPLIER)  # 48 si Flash Test activo
+
         signal = None
         reason = ""
 
-        # LÓGICA DE COMPRA: RSI < 40 (sobreventa leve)
-        if pd.notna(current_rsi) and current_rsi < 40:
+        # LÓGICA DE COMPRA: RSI < 40 (sobreventa leve) [🔬 Flash Test: < 48]
+        if pd.notna(current_rsi) and current_rsi < rsi_crypto_threshold:
             signal = "CALL (Flash Test Scalping)"
+            mode_indicator = f"🔬 ({rsi_crypto_threshold:.0f} threshold)" if FLASH_TEST_MODE else ""
             reason = (
-                f"⚡ FLASH TEST - SCALPING BTC/USD\n"
+                f"⚡ FLASH TEST - SCALPING BTC/USD {mode_indicator}\n"
                 f"   Precio: ${current_price:.2f}\n"
                 f"   RSI(14) 5min: {current_rsi:.2f} (sobreventa leve)\n"
                 f"   📈 Take Profit: ${take_profit_price:.2f} (+0.5%)\n"
@@ -655,7 +753,7 @@ def analizar_estrategia_flash_test(api, symbol):
                 f"   💰 Budget: $100 USD (prueba segura)"
             )
         else:
-            reason = f"Flash Test: RSI(14) = {current_rsi:.2f} (esperando < 40 para compra)"
+            reason = f"Neutral (RSI: {current_rsi:.2f} / Esperando < {rsi_crypto_threshold:.0f})"
 
         return signal, reason
 
@@ -701,8 +799,16 @@ def run_bot():
 
     resultados = []
 
+    # 📊 REPORTE EJECUTIVO (Cada 90 minutos)
+    if should_send_report():
+        log_message("\n📊 Generando Reporte Ejecutivo...")
+        send_executive_report(api, watchlist)
+
     # BUCLE DE ANÁLISIS
     for symbol in watchlist:
+        global tickers_scanned_count
+        tickers_scanned_count += 1  # Incrementar contador
+
         try:
             log_message(f"\n🔍 Analizando: {symbol}...")
 
@@ -822,6 +928,11 @@ def run_bot():
 
                 else:
                     log_message(f"   💤 {symbol}: {reason if reason else 'Sin señal clara'}")
+
+                    # 📱 NOTIFICACIÓN DE NO COMPRA (Verbose Mode)
+                    if reason:
+                        no_signal_msg = f"🔍 <b>{symbol}</b>: {reason}"
+                        send_telegram_msg(no_signal_msg)
 
                 # Skip al siguiente símbolo (no aplicar lógica de acciones)
                 continue
@@ -1032,8 +1143,16 @@ def run_bot():
 
             elif signal:
                 log_message(f"   💤 {symbol}: {signal}")
+                # 📱 NOTIFICACIÓN DE NO COMPRA (Verbose Mode)
+                if reason:
+                    no_signal_msg = f"🔍 <b>{symbol}</b>: {reason}"
+                    send_telegram_msg(no_signal_msg)
             else:
                 log_message(f"   💤 Sin señal clara")
+                # 📱 NOTIFICACIÓN DE NO COMPRA (Verbose Mode)
+                if reason:
+                    no_signal_msg = f"🔍 <b>{symbol}</b>: {reason}"
+                    send_telegram_msg(no_signal_msg)
 
         except Exception as e:
             log_message(f"   ⚠️ Error procesando {symbol}: {e}")
@@ -1059,22 +1178,30 @@ if __name__ == "__main__":
     log_message("=" * 60)
     log_message("🔒 MODO FORZADO: PAPER TRADING ACTIVO")
     log_message(f"📡 Endpoint: {ENDPOINT}")
+    if FLASH_TEST_MODE:
+        log_message("🔬 FLASH TEST MODE: Umbrales 20% más sensibles")
     log_message("=" * 60)
     log_message("📡 Modo: Always-On Worker")
     log_message("⏰ Análisis cada 60s durante market hours")
     log_message("💤 Análisis cada 15min fuera de horario")
     log_message("💰 Gestión de capital: $1000 acciones / $100 cripto")
     log_message("🌙 Cripto: Opera 24/7 (BTC/USD, ETH/USD)")
+    log_message("📊 Reporte ejecutivo cada 90 minutos")
+    log_message("📱 Verbose Mode: Notifica TODAS las decisiones")
     log_message("=" * 60)
 
     # 📱 NOTIFICACIÓN DE INICIO (Telegram)
+    flash_test_indicator = "🔬 Flash Test (20% más sensible)\n" if FLASH_TEST_MODE else ""
     startup_msg = (
         f"🚀 <b>TradeOlympo Online</b>\n\n"
         f"🛡️ Modo Centinela Activo\n"
         f"🔒 Paper Trading\n"
+        f"{flash_test_indicator}"
         f"⏰ Análisis cada 60s (market hours)\n"
-        f"💤 Análisis cada 15min (fuera de horario)\n\n"
-        f"📊 Listo para detectar oportunidades"
+        f"💤 Análisis cada 15min (fuera de horario)\n"
+        f"📊 Reporte ejecutivo cada 90 minutos\n"
+        f"📱 Verbose Mode: Notifica todas las decisiones\n\n"
+        f"✅ Listo para detectar oportunidades"
     )
     send_telegram_msg(startup_msg)
 
