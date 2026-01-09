@@ -47,6 +47,30 @@ SENSITIVITY_MULTIPLIER = 0.8 if FLASH_TEST_MODE else 1.0  # 20% más sensible
 DEFAULT_WATCHLIST = ["NVDA", "TSLA", "AAPL", "AMD", "MSFT", "XLE", "OXY", "APA", "CVX"]
 SECTOR_ENERGIA = ['XLE', 'OXY', 'APA', 'CVX', 'VLO', 'HAL', 'COP', 'SLB', 'BKR']
 
+# 📋 PRESET WATCHLISTS (Para comando /radar interactivo)
+PRESET_WATCHLISTS = {
+    "energia": {
+        "name": "🛢️ Sector Energía",
+        "tickers": ['XLE', 'OXY', 'APA', 'CVX', 'VLO', 'HAL', 'COP', 'SLB', 'BKR']
+    },
+    "tech": {
+        "name": "💻 Tech Giants",
+        "tickers": ["NVDA", "TSLA", "AAPL", "AMD", "MSFT", "GOOGL", "META", "AMZN"]
+    },
+    "cripto": {
+        "name": "🌙 Cripto 24/7",
+        "tickers": ["BTC/USD", "ETH/USD"]
+    },
+    "mixta": {
+        "name": "🎯 Mixta (Default)",
+        "tickers": DEFAULT_WATCHLIST
+    },
+    "actual": {
+        "name": "📋 Misión Actual",
+        "tickers": None  # Se carga desde user_config.json
+    }
+}
+
 # Filtro de calidad: Solo analizar acciones con volumen promedio > 100K
 MIN_VOLUME_THRESHOLD = 100_000
 
@@ -128,6 +152,87 @@ def send_telegram_msg(message):
         return False
     except Exception as e:
         log_message(f"   ⚠️ Telegram: Error inesperado: {e}")
+        return False
+
+def send_telegram_msg_with_buttons(message, buttons):
+    """
+    Envía un mensaje a Telegram con botones InlineKeyboard
+
+    Args:
+        message: Texto del mensaje a enviar
+        buttons: Lista de listas de botones [[{text, callback_data}]]
+
+    Returns:
+        bool: True si se envió correctamente, False si falló
+    """
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+
+        # Construir InlineKeyboardMarkup
+        inline_keyboard = []
+        for row in buttons:
+            keyboard_row = []
+            for btn in row:
+                keyboard_row.append({
+                    "text": btn["text"],
+                    "callback_data": btn["callback_data"]
+                })
+            inline_keyboard.append(keyboard_row)
+
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "HTML",
+            "reply_markup": {
+                "inline_keyboard": inline_keyboard
+            }
+        }
+
+        response = requests.post(url, json=payload, timeout=10)
+
+        if response.status_code == 200:
+            log_message(f"   📱 Telegram: Mensaje con botones enviado")
+            return True
+        else:
+            log_message(f"   ⚠️ Telegram: Error HTTP {response.status_code}")
+            return False
+
+    except Exception as e:
+        log_message(f"   ⚠️ Telegram: Error enviando botones: {e}")
+        return False
+
+def answer_callback_query(callback_query_id, text=None):
+    """
+    Responde a un callback query (confirmación de botón presionado)
+
+    Args:
+        callback_query_id: ID del callback query
+        text: Texto opcional para mostrar al usuario
+
+    Returns:
+        bool: True si se respondió correctamente
+    """
+    if not TELEGRAM_TOKEN:
+        return False
+
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery"
+        payload = {
+            "callback_query_id": callback_query_id
+        }
+
+        if text:
+            payload["text"] = text
+            payload["show_alert"] = False
+
+        response = requests.post(url, json=payload, timeout=10)
+        return response.status_code == 200
+
+    except Exception as e:
+        log_message(f"   ⚠️ Error respondiendo callback: {e}")
         return False
 
 def get_account_equity(api):
@@ -216,7 +321,7 @@ def get_telegram_updates():
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
         params = {
             "timeout": 10,
-            "allowed_updates": ["message"]
+            "allowed_updates": ["message", "callback_query"]
         }
 
         # Si ya procesamos mensajes antes, pedir solo los nuevos
@@ -236,26 +341,66 @@ def get_telegram_updates():
         log_message(f"   ⚠️ Error obteniendo updates de Telegram: {e}")
         return []
 
-def handle_radar_command(api):
+def handle_radar_command():
     """
-    Maneja el comando /radar: Analiza watchlist y envía resumen técnico
+    Maneja el comando /radar: Muestra botones para seleccionar watchlist
+
+    Returns:
+        None (envía mensaje con botones directamente)
+    """
+    try:
+        ny_tz = pytz.timezone('America/New_York')
+        current_time = datetime.now(ny_tz).strftime('%H:%M:%S ET')
+
+        message = (
+            f"🔭 <b>RADAR TÉCNICO</b>\n\n"
+            f"🕐 {current_time}\n"
+            f"📋 Selecciona qué watchlist analizar:\n"
+        )
+
+        # Construir botones desde PRESET_WATCHLISTS
+        buttons = []
+        for key, preset in PRESET_WATCHLISTS.items():
+            buttons.append([{
+                "text": preset["name"],
+                "callback_data": f"radar:{key}"
+            }])
+
+        send_telegram_msg_with_buttons(message, buttons)
+
+    except Exception as e:
+        log_message(f"   ⚠️ Error en /radar: {e}")
+        send_telegram_msg("❌ Error mostrando opciones de radar")
+
+def handle_radar_analysis(api, watchlist_key):
+    """
+    Ejecuta análisis técnico de una watchlist específica
 
     Args:
         api: Instancia de tradeapi.REST
+        watchlist_key: Clave de PRESET_WATCHLISTS ("energia", "tech", etc.)
 
     Returns:
-        str: Mensaje formateado para Telegram
+        str: Mensaje formateado con resultados
     """
     try:
-        # Cargar watchlist actual
-        config = load_user_config()
-        watchlist = config.get('watchlist', DEFAULT_WATCHLIST)[:10]  # Máximo 10 tickers
+        # Obtener watchlist según la clave
+        if watchlist_key == "actual":
+            config = load_user_config()
+            watchlist = config.get('watchlist', DEFAULT_WATCHLIST)[:10]
+            watchlist_name = "📋 Misión Actual"
+        else:
+            preset = PRESET_WATCHLISTS.get(watchlist_key)
+            if not preset:
+                return "❌ Watchlist no encontrada"
+            watchlist = preset["tickers"][:10]
+            watchlist_name = preset["name"]
 
         ny_tz = pytz.timezone('America/New_York')
         current_time = datetime.now(ny_tz).strftime('%H:%M:%S ET')
 
         radar_lines = [
-            f"🔭 <b>RADAR TÉCNICO</b>\n",
+            f"🔭 <b>ANÁLISIS: {watchlist_name}</b>\n",
             f"🕐 {current_time}\n",
             f"📊 Analizando {len(watchlist)} tickers...\n"
         ]
@@ -317,14 +462,14 @@ def handle_radar_command(api):
                         )
 
             except Exception as e:
-                radar_lines.append(f"\n<b>{symbol}</b>: ⚠️ Error obteniendo datos")
+                radar_lines.append(f"\n<b>{symbol}</b>: ⚠️ Error")
 
         radar_lines.append(f"\n\n✅ Análisis completado")
         return "".join(radar_lines)
 
     except Exception as e:
-        log_message(f"   ⚠️ Error en /radar: {e}")
-        return "❌ Error ejecutando /radar. Intenta de nuevo."
+        log_message(f"   ⚠️ Error en análisis radar: {e}")
+        return "❌ Error ejecutando análisis"
 
 def handle_status_command(api):
     """
@@ -407,9 +552,100 @@ def handle_status_command(api):
         traceback.print_exc()
         return "❌ Error ejecutando /status. Intenta de nuevo."
 
+def handle_config_command():
+    """
+    Maneja el comando /config: Muestra botones para cambiar estrategia
+
+    Returns:
+        None (envía mensaje con botones directamente)
+    """
+    try:
+        # Cargar estrategia actual
+        config = load_user_config()
+        active_strategy = config.get('active_strategy', 'centinela')
+
+        strategy_names = {
+            'centinela': '🛡️ Centinela (Todas)',
+            'rompeolas': '🌊 Rompeolas',
+            'elite': '🏆 Élite',
+            'wheel': '🔄 The Wheel',
+            'orb': '⚡ ORB',
+            'flash_test': '⚡ Flash Test'
+        }
+
+        ny_tz = pytz.timezone('America/New_York')
+        current_time = datetime.now(ny_tz).strftime('%H:%M:%S ET')
+
+        message = (
+            f"⚙️ <b>CONTROL REMOTO</b>\n\n"
+            f"🕐 {current_time}\n"
+            f"📊 Estrategia actual: <b>{strategy_names.get(active_strategy, active_strategy.upper())}</b>\n\n"
+            f"Selecciona la nueva estrategia:"
+        )
+
+        # Construir botones de estrategias
+        buttons = []
+        for key, name in strategy_names.items():
+            emoji = "✅ " if key == active_strategy else ""
+            buttons.append([{
+                "text": f"{emoji}{name}",
+                "callback_data": f"config:{key}"
+            }])
+
+        send_telegram_msg_with_buttons(message, buttons)
+
+    except Exception as e:
+        log_message(f"   ⚠️ Error en /config: {e}")
+        send_telegram_msg("❌ Error mostrando opciones de configuración")
+
+def handle_config_change(strategy_key):
+    """
+    Cambia la estrategia activa en user_config.json
+
+    Args:
+        strategy_key: Clave de la estrategia ("centinela", "rompeolas", etc.)
+
+    Returns:
+        str: Mensaje de confirmación
+    """
+    try:
+        strategy_names = {
+            'centinela': '🛡️ Centinela',
+            'rompeolas': '🌊 Rompeolas',
+            'elite': '🏆 Élite',
+            'wheel': '🔄 The Wheel',
+            'orb': '⚡ ORB',
+            'flash_test': '⚡ Flash Test'
+        }
+
+        # Cargar configuración actual
+        config = load_user_config()
+        old_strategy = config.get('active_strategy', 'centinela')
+
+        # Actualizar estrategia
+        config['active_strategy'] = strategy_key
+        config['last_updated'] = datetime.now().isoformat()
+
+        # Guardar en user_config.json
+        with open('user_config.json', 'w') as f:
+            json.dump(config, f, indent=2)
+
+        log_message(f"   ⚙️ Estrategia cambiada: {old_strategy} → {strategy_key}")
+
+        return (
+            f"✅ <b>ESTRATEGIA ACTUALIZADA</b>\n\n"
+            f"Anterior: {strategy_names.get(old_strategy, old_strategy.upper())}\n"
+            f"Nueva: <b>{strategy_names.get(strategy_key, strategy_key.upper())}</b>\n\n"
+            f"⏳ El cambio se aplicará en el próximo análisis (60s)"
+        )
+
+    except Exception as e:
+        log_message(f"   ⚠️ Error cambiando estrategia: {e}")
+        return "❌ Error actualizando estrategia"
+
 def process_telegram_commands(api):
     """
-    Procesa comandos entrantes de Telegram
+    Procesa comandos y callbacks entrantes de Telegram
 
     Args:
         api: Instancia de tradeapi.REST
@@ -424,34 +660,75 @@ def process_telegram_commands(api):
         if update_id:
             last_update_id = update_id
 
-        # Extraer mensaje
-        message = update.get("message", {})
-        chat_id = message.get("chat", {}).get("id")
-        text = message.get("text", "")
+        # ========== PROCESAR MENSAJES DE TEXTO (COMANDOS) ==========
+        if "message" in update:
+            message = update.get("message", {})
+            chat_id = message.get("chat", {}).get("id")
+            text = message.get("text", "")
 
-        # Verificar que el mensaje venga del chat correcto
-        if str(chat_id) != str(TELEGRAM_CHAT_ID):
-            continue
+            # Verificar que el mensaje venga del chat correcto
+            if str(chat_id) != str(TELEGRAM_CHAT_ID):
+                continue
 
-        # Procesar comandos
-        if text.startswith("/radar"):
-            log_message(f"\n💬 Comando recibido: /radar")
-            response = handle_radar_command(api)
-            send_telegram_msg(response)
+            # Procesar comandos
+            if text.startswith("/radar"):
+                log_message(f"\n💬 Comando recibido: /radar")
+                handle_radar_command()  # Ahora solo muestra botones
 
-        elif text.startswith("/status"):
-            log_message(f"\n💬 Comando recibido: /status")
-            response = handle_status_command(api)
-            send_telegram_msg(response)
+            elif text.startswith("/status"):
+                log_message(f"\n💬 Comando recibido: /status")
+                response = handle_status_command(api)
+                send_telegram_msg(response)
 
-        elif text.startswith("/"):
-            # Comando desconocido
-            send_telegram_msg(
-                f"❓ Comando desconocido: {text}\n\n"
-                f"Comandos disponibles:\n"
-                f"  /radar - Análisis técnico\n"
-                f"  /status - Balance y posiciones"
-            )
+            elif text.startswith("/config"):
+                log_message(f"\n💬 Comando recibido: /config")
+                handle_config_command()  # Muestra botones de estrategias
+
+            elif text.startswith("/"):
+                # Comando desconocido
+                send_telegram_msg(
+                    f"❓ Comando desconocido: {text}\n\n"
+                    f"<b>Comandos disponibles:</b>\n"
+                    f"  /radar - Análisis técnico interactivo\n"
+                    f"  /status - Balance y posiciones\n"
+                    f"  /config - Cambiar estrategia"
+                )
+
+        # ========== PROCESAR CALLBACK QUERIES (BOTONES) ==========
+        elif "callback_query" in update:
+            callback = update.get("callback_query", {})
+            callback_id = callback.get("id")
+            callback_data = callback.get("data", "")
+            from_user = callback.get("from", {})
+            user_id = from_user.get("id")
+
+            # Verificar que venga del usuario correcto
+            if str(user_id) != str(TELEGRAM_CHAT_ID):
+                continue
+
+            log_message(f"\n🔘 Callback recibido: {callback_data}")
+
+            # Parsear callback_data (formato: "comando:parametro")
+            if ":" in callback_data:
+                command, param = callback_data.split(":", 1)
+
+                # ========== CALLBACK: RADAR ANALYSIS ==========
+                if command == "radar":
+                    answer_callback_query(callback_id, "🔍 Analizando...")
+                    response = handle_radar_analysis(api, param)
+                    send_telegram_msg(response)
+
+                # ========== CALLBACK: CONFIG CHANGE ==========
+                elif command == "config":
+                    answer_callback_query(callback_id, "⚙️ Actualizando...")
+                    response = handle_config_change(param)
+                    send_telegram_msg(response)
+
+                else:
+                    answer_callback_query(callback_id, "❌ Callback no reconocido")
+
+            else:
+                answer_callback_query(callback_id, "❌ Formato de callback inválido")
 
 
 def is_crypto_symbol(symbol):
@@ -1443,7 +1720,8 @@ if __name__ == "__main__":
     log_message("🌙 Cripto: Opera 24/7 (BTC/USD, ETH/USD)")
     log_message("📊 Reporte ejecutivo cada 90 minutos")
     log_message("🤫 Silent Mode: Solo notifica señales y órdenes")
-    log_message("💬 Comandos: /radar, /status")
+    log_message("💬 Comandos: /radar, /status, /config")
+    log_message("🔘 Controles interactivos: Botones InlineKeyboard")
     log_message("=" * 60)
 
     # 📱 NOTIFICACIÓN DE INICIO (Telegram)
@@ -1458,8 +1736,9 @@ if __name__ == "__main__":
         f"📊 Reporte ejecutivo cada 90 minutos\n"
         f"🤫 Silent Mode: Solo notifica señales y órdenes\n\n"
         f"💬 <b>Comandos disponibles:</b>\n"
-        f"  /radar - Análisis técnico de watchlist\n"
-        f"  /status - Balance y posiciones\n\n"
+        f"  /radar - Análisis técnico interactivo\n"
+        f"  /status - Balance y posiciones\n"
+        f"  /config - Cambiar estrategia\n\n"
         f"✅ Listo para detectar oportunidades"
     )
     send_telegram_msg(startup_msg)
