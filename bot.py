@@ -18,6 +18,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import pytz
+import requests
 
 # ========== CONFIGURACIÓN ==========
 
@@ -26,6 +27,10 @@ SECRET_KEY = os.environ.get('ALPACA_SECRET_KEY')
 
 # 🔒 MODO FORZADO: PAPER TRADING (Hardcoded para bypass variables de entorno)
 ENDPOINT = "https://paper-api.alpaca.markets"
+
+# 📱 TELEGRAM CONFIGURATION
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 # Watchlist por defecto
 DEFAULT_WATCHLIST = ["NVDA", "TSLA", "AAPL", "AMD", "MSFT", "XLE", "OXY", "APA", "CVX"]
@@ -72,6 +77,47 @@ def save_to_trade_history(trade_record):
 
     except Exception as e:
         log_message(f"   ⚠️ Error guardando en trade_history.json: {e}")
+
+def send_telegram_msg(message):
+    """
+    Envía un mensaje a Telegram de forma robusta
+
+    Args:
+        message: Texto del mensaje a enviar
+
+    Returns:
+        bool: True si se envió correctamente, False si falló
+    """
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        # Si no hay credenciales, no hacer nada (sin fallar el bot)
+        return False
+
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "HTML"
+        }
+
+        response = requests.post(url, json=payload, timeout=10)
+
+        if response.status_code == 200:
+            log_message(f"   📱 Telegram: Mensaje enviado")
+            return True
+        else:
+            log_message(f"   ⚠️ Telegram: Error HTTP {response.status_code}")
+            return False
+
+    except requests.exceptions.Timeout:
+        log_message(f"   ⚠️ Telegram: Timeout (red lenta)")
+        return False
+    except requests.exceptions.ConnectionError:
+        log_message(f"   ⚠️ Telegram: Error de conexión (sin internet)")
+        return False
+    except Exception as e:
+        log_message(f"   ⚠️ Telegram: Error inesperado: {e}")
+        return False
 
 
 def is_crypto_symbol(symbol):
@@ -685,6 +731,17 @@ def run_bot():
 
                     current_price = float(bars_5min['close'].iloc[-1])
 
+                    # 📱 ALERTA 1: RADAR DETECTADO (Telegram)
+                    telegram_radar = (
+                        f"🔭 <b>RADAR DETECTADO</b>\n\n"
+                        f"🎯 Ticker: <b>{symbol}</b>\n"
+                        f"⚡ Estrategia: <b>Flash Test (Cripto 24/7)</b>\n"
+                        f"📊 Precio: <b>${current_price:.2f}</b>\n"
+                        f"📈 RSI 5min: <code>{reason.split('RSI(14) 5min: ')[1].split(' ')[0] if 'RSI(14) 5min:' in reason else 'N/A'}</code>\n\n"
+                        f"⏳ Analizando viabilidad de compra..."
+                    )
+                    send_telegram_msg(telegram_radar)
+
                     # EJECUCIÓN CRIPTO: Usar notional ($100) en lugar de qty
                     try:
                         qty, es_cripto, notional_value = calculate_dynamic_quantity(current_price, symbol=symbol)
@@ -708,6 +765,19 @@ def run_bot():
                         log_message(f"   ✅ ORDEN EJECUTADA EXITOSAMENTE")
                         log_message(f"      Order ID: {order.id}")
                         log_message(f"      Status: {order.status}")
+
+                        # 📱 ALERTA 2: ORDEN ENVIADA (Telegram)
+                        telegram_exec = (
+                            f"🟢 <b>ORDEN ENVIADA</b> ✅\n\n"
+                            f"💼 Se compraron <b>{qty:.6f} {symbol.split('/')[0]}</b>\n"
+                            f"🎯 Ticker: <b>{symbol}</b>\n"
+                            f"💰 Notional: <b>${notional_value:.2f} USD</b>\n"
+                            f"📊 Precio: <b>${current_price:.2f}</b>\n"
+                            f"🆔 Order ID: <code>{order.id}</code>\n"
+                            f"📈 Status: <b>{order.status.upper()}</b>\n\n"
+                            f"⚡ Estrategia: Flash Test (Cripto)"
+                        )
+                        send_telegram_msg(telegram_exec)
 
                         # Timestamp en New York Time
                         ny_time = datetime.now(pytz.timezone('America/New_York'))
@@ -866,6 +936,25 @@ def run_bot():
 
                 current_price = float(bars.iloc[-1]['close'])
 
+                # 📱 ALERTA 1: RADAR DETECTADO (Telegram)
+                strategy_name_map = {
+                    'rompeolas': '🌊 Rompeolas',
+                    'elite': '🏆 Élite',
+                    'wheel': '🔄 The Wheel',
+                    'orb': '⚡ ORB',
+                    'centinela': '🛡️ Centinela'
+                }
+                strategy_display = strategy_name_map.get(triggered_strategy, triggered_strategy.upper())
+
+                telegram_radar = (
+                    f"🔭 <b>RADAR DETECTADO</b>\n\n"
+                    f"🎯 Ticker: <b>{symbol}</b>\n"
+                    f"⚡ Estrategia: <b>{strategy_display}</b>\n"
+                    f"📊 Precio: <b>${current_price:.2f}</b>\n\n"
+                    f"⏳ Analizando viabilidad de compra..."
+                )
+                send_telegram_msg(telegram_radar)
+
                 # EJECUCIÓN REAL: Compra dinámica basada en $1000 budget
                 try:
                     qty, es_cripto, total_cost = calculate_dynamic_quantity(current_price, budget=1000, symbol=symbol)
@@ -888,6 +977,18 @@ def run_bot():
                     log_message(f"   ✅ ORDEN EJECUTADA EXITOSAMENTE")
                     log_message(f"      Order ID: {order.id}")
                     log_message(f"      Status: {order.status}")
+
+                    # 📱 ALERTA 2: ORDEN ENVIADA (Telegram)
+                    telegram_exec = (
+                        f"🟢 <b>ORDEN ENVIADA</b> ✅\n\n"
+                        f"💼 Se compraron <b>{qty} acciones</b> de <b>{symbol}</b>\n"
+                        f"💰 Costo total: <b>${total_cost:.2f}</b>\n"
+                        f"📊 Precio: <b>${current_price:.2f}</b>\n"
+                        f"🆔 Order ID: <code>{order.id}</code>\n"
+                        f"📈 Status: <b>{order.status.upper()}</b>\n\n"
+                        f"⚡ Estrategia: {strategy_display}"
+                    )
+                    send_telegram_msg(telegram_exec)
 
                     # Timestamp en New York Time
                     ny_time = datetime.now(pytz.timezone('America/New_York'))
@@ -966,7 +1067,21 @@ if __name__ == "__main__":
     log_message("🌙 Cripto: Opera 24/7 (BTC/USD, ETH/USD)")
     log_message("=" * 60)
 
+    # 📱 NOTIFICACIÓN DE INICIO (Telegram)
+    startup_msg = (
+        f"🚀 <b>TradeOlympo Online</b>\n\n"
+        f"🛡️ Modo Centinela Activo\n"
+        f"🔒 Paper Trading\n"
+        f"⏰ Análisis cada 60s (market hours)\n"
+        f"💤 Análisis cada 15min (fuera de horario)\n\n"
+        f"📊 Listo para detectar oportunidades"
+    )
+    send_telegram_msg(startup_msg)
+
     import time
+
+    # Estado de mercado anterior (para detectar cambios)
+    previous_market_state = None
 
     while True:
         try:
@@ -981,6 +1096,21 @@ if __name__ == "__main__":
 
             # Detectar si hay cripto en watchlist
             has_crypto = any(is_crypto_symbol(s) for s in watchlist)
+
+            # 📱 NOTIFICACIÓN DE CAMBIO DE ESTADO (Telegram)
+            if previous_market_state is not None and previous_market_state != market_is_open:
+                if not market_is_open and not has_crypto:
+                    # Mercado acaba de cerrar
+                    close_msg = (
+                        f"🔴 <b>Mercado Cerrado</b>\n\n"
+                        f"🕐 Hora: {current_time}\n"
+                        f"💤 Modo ahorro de recursos activado\n"
+                        f"⏰ Próxima verificación en 15 minutos\n\n"
+                        f"📊 Esperando próxima apertura..."
+                    )
+                    send_telegram_msg(close_msg)
+
+            previous_market_state = market_is_open
 
             if market_is_open:
                 if has_crypto:
